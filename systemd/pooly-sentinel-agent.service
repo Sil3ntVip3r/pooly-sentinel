@@ -1,0 +1,42 @@
+[Unit]
+Description=Pooly Sentinel Agent
+Documentation=https://github.com/Sil3ntVip3r/pooly-sentinel
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+
+ExecStartPre=/usr/local/bin/pooly-agent check config --config /etc/pooly-sentinel/config.yaml
+ExecStart=/usr/local/bin/pooly-agent run --config /etc/pooly-sentinel/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+EnvironmentFile=-/etc/pooly-sentinel/pooly-sentinel.env
+
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+WatchdogSec=60s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+
+StateDirectory=pooly-sentinel
+LogsDirectory=pooly-sentinel
+RuntimeDirectory=pooly-sentinel
+ConfigurationDirectory=pooly-sentinel
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/pooly-sentinel /var/log/pooly-sentinel /run/pooly-sentinel
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pooly-sentinel
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Go build output
+/pooly-agent
+dist/
+*.test
+*.prof
+coverage.out
+
+# Local environments and secrets
+.env
+*.env.local
+pooly-sentinel.env
+
+# Editors
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.swp
