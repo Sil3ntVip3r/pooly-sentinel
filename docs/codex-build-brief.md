@@ -39,3 +39,7 @@ Task 1 does not implement production monitoring.
 4. systemd, journald, SSH, and filewatch collectors.
 5. Rule, incident, notification, reporting, API, and systemd integration.
 6. Tests and release checks.
+
+## Current Implementation Status
+
+Task 2 implements the core Go foundation only. Storage, production collectors, monitoring loops, notification delivery, journald parsing, SSH checks, file watching, and resource collection remain intentionally unimplemented.

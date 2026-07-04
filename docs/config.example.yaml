@@ -1,0 +1,105 @@
+version: "1"
+
+node:
+  id: "001"
+  name: "Node001 Toronto"
+  hostname: "pooly-ssdnodes-001-toronto"
+  region: "toronto"
+  role: "mining-node"
+  environment: "production"
+  ring: "alpha"
+
+api:
+  enabled: true
+  bind: "127.0.0.1:9587"
+
+logging:
+  level: "info"
+  format: "text"
+
+commands:
+  systemctl: /bin/systemctl
+  journalctl: /bin/journalctl
+  sshd: /usr/sbin/sshd
+  ss: /usr/sbin/ss
+  ufw: /usr/sbin/ufw
+  visudo: /usr/sbin/visudo
+  auditctl: /usr/sbin/auditctl
+  ausearch: /usr/sbin/ausearch
+
+resources:
+  enabled: false
+  interval: 30s
+  timeout: 3s
+
+systemd:
+  enabled: false
+  interval: 30s
+  critical_services:
+    - ssh.service
+    - fail2ban.service
+    - pooly-sentinel-agent.service
+    - miningcore.service
+
+ssh:
+  enabled: false
+  interval: 5m
+  event_driven: true
+  expected:
+    ports: [6200]
+    forbidden_ports: [22]
+    permitrootlogin: "no"
+    passwordauthentication: "no"
+    kbdinteractiveauthentication: "no"
+    permitemptypasswords: "no"
+    pubkeyauthentication: "yes"
+    strictmodes: "yes"
+    permituserenvironment: "no"
+
+journal:
+  auth:
+    enabled: false
+    interval: 10s
+    timeout: 3s
+  services:
+    enabled: false
+    interval: 30s
+    timeout: 3s
+  kernel:
+    enabled: false
+    interval: 60s
+    timeout: 3s
+
+filewatch:
+  enabled: false
+  debounce: 2s
+  periodic_verify_interval: 5m
+
+audit:
+  enabled: false
+  mode: observe_only
+  manage_rules: false
+
+notification:
+  paid_receivers_enabled_by_default: false
+
+receivers:
+  - name: local_file
+    type: file
+    cost_class: free_core
+    enabled: true
+
+  - name: discord_primary
+    type: discord
+    cost_class: free_external
+    enabled: false
+    webhook_env: POOLY_DISCORD_WEBHOOK
+
+  - name: pushover_critical
+    type: pushover
+    cost_class: paid_external
+    enabled: false
+
+storage:
+  state_dir: /var/lib/pooly-sentinel
+  log_dir: /var/log/pooly-sentinel

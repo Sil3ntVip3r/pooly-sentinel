@@ -2,17 +2,19 @@
 
 Pooly Sentinel is the planned Go-based replacement path for the current Bash-based Pooly Server Guard. This repository starts the new agent foundation without changing the existing guard.
 
-## Task 1 Status
+## Current Status
 
-This first step is structure and documentation only.
+Task 2 core foundation is implemented. Production monitoring remains intentionally unimplemented.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
 - Primary service template: `systemd/pooly-sentinel-agent.service`
-- Install and uninstall scripts are stubs only
-- Production monitoring is not implemented yet
+- Configuration loading and validation are present
+- Redaction, structured logging, safe command execution, lifecycle signals, and version metadata are present
+- Install and uninstall scripts remain stubs only
+- Collectors, monitoring, storage, notification delivery, journald parsing, SSH checks, file watching, and resource collection are not implemented yet
 
-The current `pooly-agent` entrypoint supports `help` and `version`. Operational commands intentionally exit as placeholders so the skeleton cannot accidentally run partial monitoring.
+The current `pooly-agent` entrypoint supports safe placeholder commands. `run` loads configuration and logging, then waits without starting production monitoring.
 
 ## Safety Rules
 
@@ -66,7 +68,9 @@ docs/                     design notes
 
 ```bash
 go fmt ./...
+go mod tidy
 go test ./...
+go test -race ./...
 go build ./cmd/pooly-agent
 ```
 
