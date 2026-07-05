@@ -42,4 +42,4 @@ Task 1 does not implement production monitoring.
 
 ## Current Implementation Status
 
-Task 3 implements the storage foundation only. Production collectors, monitoring loops, notification delivery, journald parsing, SSH checks, file watching, resource collection, rule evaluation, incident lifecycle processing, and systemd readiness remain intentionally unimplemented.
+Task 4 implements Linux resource collectors only. Production monitoring loops, notification delivery, journald parsing, SSH checks, file watching, systemd service monitoring, rule evaluation, incident lifecycle processing, and systemd readiness remain intentionally unimplemented.

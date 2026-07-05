@@ -19,5 +19,7 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - Paid receivers are disabled and validation rejects enabled paid receivers.
 - SQLite uses a bounded busy timeout and WAL by default where supported.
 - Storage filenames must be plain filenames, not paths.
+- Resource collectors are individually configurable and collect observations only; they do not evaluate alert thresholds.
+- Resource `timeout` must be less than `interval`, mount paths must be absolute, and glob patterns are validated.
 
 See `docs/config.example.yaml`.

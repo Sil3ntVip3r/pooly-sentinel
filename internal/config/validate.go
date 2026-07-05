@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -68,7 +69,7 @@ func (c Config) Validate() error {
 	validateOneOf(&errs, "logging.level", c.Logging.Level, "debug", "info", "warn", "error")
 
 	validateCommandPaths(&errs, c.Commands)
-	validateTimedConfig(&errs, "resources", c.Resources)
+	validateResources(&errs, c.Resources)
 	validateDuration(&errs, "systemd.interval", c.Systemd.Interval.Duration)
 	for i, service := range c.Systemd.CriticalServices {
 		field := fmt.Sprintf("systemd.critical_services[%d]", i)
@@ -143,6 +144,70 @@ func validateDuration(errs *ValidationErrors, field string, d time.Duration) {
 func validateTimedConfig(errs *ValidationErrors, prefix string, cfg TimedConfig) {
 	validateDuration(errs, prefix+".interval", cfg.Interval.Duration)
 	validateDuration(errs, prefix+".timeout", cfg.Timeout.Duration)
+}
+
+func validateResources(errs *ValidationErrors, cfg ResourcesConfig) {
+	validateDuration(errs, "resources.interval", cfg.Interval.Duration)
+	validateDuration(errs, "resources.timeout", cfg.Timeout.Duration)
+	if cfg.Interval.Duration > 0 && cfg.Timeout.Duration >= cfg.Interval.Duration {
+		errs.add("resources.timeout", "must be less than resources.interval")
+	}
+	validateStringListLimit(errs, "resources.filesystem.mounts", cfg.Filesystem.Mounts, 64)
+	seenMounts := map[string]struct{}{}
+	for i, mount := range cfg.Filesystem.Mounts {
+		field := fmt.Sprintf("resources.filesystem.mounts[%d]", i)
+		requireString(errs, field, mount)
+		if mount != "" {
+			if !filepath.IsAbs(mount) {
+				errs.add(field, "must be an absolute path")
+			}
+			clean := filepath.Clean(mount)
+			if _, ok := seenMounts[clean]; ok {
+				errs.add(field, "duplicates another mount after normalization")
+			}
+			seenMounts[clean] = struct{}{}
+		}
+		validateNoSecretLiteral(errs, field, mount)
+	}
+	validateGlobList(errs, "resources.diskio.exclude", cfg.DiskIO.Exclude, 64)
+	validateGlobList(errs, "resources.network.include", cfg.Network.Include, 64)
+	validateGlobList(errs, "resources.network.exclude", cfg.Network.Exclude, 64)
+	validateDuplicateStrings(errs, "resources.network.include", cfg.Network.Include)
+	validateDuplicateStrings(errs, "resources.network.exclude", cfg.Network.Exclude)
+}
+
+func validateStringListLimit(errs *ValidationErrors, field string, values []string, limit int) {
+	if len(values) > limit {
+		errs.add(field, fmt.Sprintf("must contain no more than %d entries", limit))
+	}
+}
+
+func validateGlobList(errs *ValidationErrors, field string, values []string, limit int) {
+	validateStringListLimit(errs, field, values, limit)
+	for i, value := range values {
+		itemField := fmt.Sprintf("%s[%d]", field, i)
+		requireString(errs, itemField, value)
+		if value == "" {
+			continue
+		}
+		if _, err := path.Match(value, "candidate"); err != nil {
+			errs.add(itemField, "must be a valid glob pattern")
+		}
+		validateNoSecretLiteral(errs, itemField, value)
+	}
+}
+
+func validateDuplicateStrings(errs *ValidationErrors, field string, values []string) {
+	seen := map[string]struct{}{}
+	for i, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			errs.add(fmt.Sprintf("%s[%d]", field, i), "duplicates another entry")
+		}
+		seen[value] = struct{}{}
+	}
 }
 
 func validateLoopbackBind(errs *ValidationErrors, field, bind string) {

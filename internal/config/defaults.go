@@ -27,10 +27,29 @@ func Default() Config {
 			Auditctl:   "/usr/sbin/auditctl",
 			Ausearch:   "/usr/sbin/ausearch",
 		},
-		Resources: TimedConfig{
-			Enabled:  false,
+		Resources: ResourcesConfig{
+			Enabled:  true,
 			Interval: Duration{Duration: 30 * time.Second},
 			Timeout:  Duration{Duration: 3 * time.Second},
+			CPU:      ResourceToggleConfig{Enabled: true},
+			Memory:   ResourceToggleConfig{Enabled: true},
+			Pressure: PressureConfig{Enabled: true, MissingIsOK: true},
+			Filesystem: FilesystemConfig{
+				Enabled: true,
+				Mounts:  []string{"/", "/home", "/var", "/var/log", "/var/lib", "/var/lib/pooly-sentinel", "/var/log/pooly-sentinel"},
+			},
+			DiskIO: DiskIOConfig{
+				Enabled:      true,
+				AutoDiscover: true,
+				Exclude:      []string{"loop*", "ram*", "fd*", "sr*"},
+			},
+			Network: NetworkConfig{
+				Enabled:      true,
+				AutoDiscover: true,
+				Include:      []string{},
+				Exclude:      []string{"lo", "docker*", "veth*", "br-*"},
+			},
+			Uptime: ResourceToggleConfig{Enabled: true},
 		},
 		Systemd: SystemdConfig{
 			Enabled:  false,

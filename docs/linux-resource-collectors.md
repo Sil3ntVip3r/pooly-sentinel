@@ -1,6 +1,6 @@
 # Linux Resource Collectors
 
-Phase 1A adds lightweight resource monitoring. These collectors are intended for early warning and local daily reporting, not dashboard-scale telemetry.
+Task 4 adds lightweight Linux resource collectors. They emit typed observations and metrics only. They do not send notifications, open incidents, evaluate thresholds, restart services, or start a production scheduler.
 
 ## Sources
 
@@ -23,4 +23,6 @@ Phase 1A adds lightweight resource monitoring. These collectors are intended for
 
 ## Status
 
-No resource collector implementation exists in Task 1.
+Task 4 implements parser-driven collectors for CPU, load average, memory, PSI pressure, filesystems, disk I/O, network interfaces, uptime, boot time, and boot-ID change detection.
+
+Production targets Linux. On non-Linux platforms the manual collector command reports collectors as unsupported without panicking.

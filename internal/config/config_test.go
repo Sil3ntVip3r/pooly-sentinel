@@ -171,6 +171,59 @@ func TestLoadBytesRejectsInvalidStorageDuration(t *testing.T) {
 	}
 }
 
+func TestLoadBytesRejectsInvalidResourceConfig(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+		field string
+	}{
+		{
+			name: "timeout greater than interval",
+			block: `resources:
+  enabled: true
+  interval: 3s
+  timeout: 3s`,
+			field: "resources.timeout",
+		},
+		{
+			name: "duplicate mount",
+			block: `resources:
+  enabled: true
+  interval: 30s
+  timeout: 3s
+  filesystem:
+    enabled: true
+    mounts:
+      - /var
+      - /var/`,
+			field: "resources.filesystem.mounts[1]",
+		},
+		{
+			name: "invalid glob",
+			block: `resources:
+  enabled: true
+  interval: 30s
+  timeout: 3s
+  network:
+    exclude:
+      - "["`,
+			field: "resources.network.exclude[0]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := validConfigYAML + "\n" + tc.block + "\n"
+			_, err := LoadBytes(context.Background(), []byte(input))
+			if err == nil {
+				t.Fatal("LoadBytes() error = nil, want resource validation error")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
+			}
+		})
+	}
+}
+
 func TestLoadBytesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

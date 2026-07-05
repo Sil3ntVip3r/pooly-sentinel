@@ -13,7 +13,7 @@ type Config struct {
 	API          APIConfig          `yaml:"api"`
 	Logging      LoggingConfig      `yaml:"logging"`
 	Commands     CommandPaths       `yaml:"commands"`
-	Resources    TimedConfig        `yaml:"resources"`
+	Resources    ResourcesConfig    `yaml:"resources"`
 	Systemd      SystemdConfig      `yaml:"systemd"`
 	SSH          SSHConfig          `yaml:"ssh"`
 	Journal      JournalConfig      `yaml:"journal"`
@@ -59,6 +59,46 @@ type TimedConfig struct {
 	Enabled  bool     `yaml:"enabled"`
 	Interval Duration `yaml:"interval"`
 	Timeout  Duration `yaml:"timeout"`
+}
+
+type ResourcesConfig struct {
+	Enabled    bool                 `yaml:"enabled"`
+	Interval   Duration             `yaml:"interval"`
+	Timeout    Duration             `yaml:"timeout"`
+	CPU        ResourceToggleConfig `yaml:"cpu"`
+	Memory     ResourceToggleConfig `yaml:"memory"`
+	Pressure   PressureConfig       `yaml:"pressure"`
+	Filesystem FilesystemConfig     `yaml:"filesystem"`
+	DiskIO     DiskIOConfig         `yaml:"diskio"`
+	Network    NetworkConfig        `yaml:"network"`
+	Uptime     ResourceToggleConfig `yaml:"uptime"`
+}
+
+type ResourceToggleConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type PressureConfig struct {
+	Enabled     bool `yaml:"enabled"`
+	MissingIsOK bool `yaml:"missing_is_ok"`
+}
+
+type FilesystemConfig struct {
+	Enabled bool     `yaml:"enabled"`
+	Mounts  []string `yaml:"mounts"`
+}
+
+type DiskIOConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	AutoDiscover bool     `yaml:"auto_discover"`
+	Exclude      []string `yaml:"exclude"`
+}
+
+type NetworkConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	AutoDiscover bool     `yaml:"auto_discover"`
+	Include      []string `yaml:"include"`
+	Exclude      []string `yaml:"exclude"`
 }
 
 type SystemdConfig struct {

@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Task 3 storage foundation is implemented. Production monitoring remains intentionally unimplemented.
+Task 4 Linux resource collectors are implemented. Production monitoring remains intentionally unimplemented.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -12,8 +12,9 @@ Task 3 storage foundation is implemented. Production monitoring remains intentio
 - Configuration loading and validation are present
 - Redaction, structured logging, safe command execution, lifecycle signals, and version metadata are present
 - SQLite storage migrations, typed repositories, current-state JSON, JSONL events, evidence writing, and storage doctor checks are present
+- Linux resource collectors emit typed observations for CPU, load, memory, PSI, filesystems, disk I/O, network, and uptime
 - Install and uninstall scripts remain stubs only
-- Collectors, production monitoring loops, notification delivery, journald parsing, SSH checks, file watching, resource collection, rule evaluation, and incident lifecycle processing are not implemented yet
+- Production monitoring loops, notification delivery, journald parsing, SSH checks, file watching, rule evaluation, and incident lifecycle processing are not implemented yet
 
 The current `pooly-agent` entrypoint supports safe placeholder commands. `run` loads configuration and logging, then waits without starting production monitoring.
 
