@@ -10,8 +10,16 @@ func Default() Config {
 			Ring:        "alpha",
 		},
 		API: APIConfig{
-			Enabled: true,
-			Bind:    DefaultAPIBind,
+			Enabled:         false,
+			Listen:          DefaultAPIBind,
+			ReadTimeout:     Duration{Duration: 5 * time.Second},
+			WriteTimeout:    Duration{Duration: 10 * time.Second},
+			ShutdownTimeout: Duration{Duration: 10 * time.Second},
+		},
+		Reports: ReportsConfig{
+			Enabled:         true,
+			MaxIncidents:    100,
+			IncludeResolved: true,
 		},
 		Logging: LoggingConfig{
 			Level:  "info",
@@ -52,9 +60,12 @@ func Default() Config {
 			Uptime: ResourceToggleConfig{Enabled: true},
 		},
 		Systemd: SystemdConfig{
-			Enabled:  false,
-			Interval: Duration{Duration: 30 * time.Second},
-			Timeout:  Duration{Duration: 3 * time.Second},
+			Enabled:          false,
+			Interval:         Duration{Duration: 30 * time.Second},
+			Timeout:          Duration{Duration: 3 * time.Second},
+			Notify:           true,
+			Watchdog:         true,
+			WatchdogInterval: Duration{Duration: 30 * time.Second},
 			CriticalServices: []string{
 				"ssh.service",
 				"fail2ban.service",

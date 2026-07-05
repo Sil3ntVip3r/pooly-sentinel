@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func SignalContext(parent context.Context) (context.Context, context.CancelFunc) {
@@ -28,6 +30,114 @@ func RunPlaceholder(ctx context.Context, logger *slog.Logger) error {
 			slog.String("component", "agent"),
 			slog.String("reason", ctx.Err().Error()),
 		)
+	}
+	return nil
+}
+
+type APIService interface {
+	Start(ctx context.Context) error
+	SetReady(ready bool)
+	Shutdown(ctx context.Context) error
+	Addr() string
+}
+
+type Store interface {
+	Close() error
+}
+
+type Notifier interface {
+	Ready(ctx context.Context) error
+	Stopping(ctx context.Context) error
+}
+
+type RuntimeOptions struct {
+	Logger           *slog.Logger
+	Store            Store
+	API              APIService
+	Notifier         Notifier
+	ShutdownTimeout  time.Duration
+	WatchdogEnabled  bool
+	WatchdogInterval time.Duration
+	RunWatchdog      func(ctx context.Context)
+}
+
+func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
+	if ctx == nil {
+		return context.Canceled
+	}
+	if opts.ShutdownTimeout <= 0 {
+		opts.ShutdownTimeout = 10 * time.Second
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if opts.API != nil {
+		if err := opts.API.Start(ctx); err != nil {
+			closeStore(opts.Store, opts.Logger)
+			return err
+		}
+		opts.API.SetReady(true)
+		if opts.Logger != nil {
+			opts.Logger.InfoContext(ctx, "api listening",
+				slog.String("component", "api"),
+				slog.String("addr", opts.API.Addr()),
+			)
+		}
+	}
+	if opts.Notifier != nil {
+		if err := opts.Notifier.Ready(ctx); err != nil && opts.Logger != nil {
+			opts.Logger.WarnContext(ctx, "systemd readiness notification failed",
+				slog.String("component", "systemdnotify"),
+				slog.String("error_class", "notify"),
+			)
+		}
+	}
+	watchdogCtx, cancelWatchdog := context.WithCancel(ctx)
+	if opts.WatchdogEnabled && opts.RunWatchdog != nil {
+		go opts.RunWatchdog(watchdogCtx)
+	}
+	if opts.Logger != nil {
+		opts.Logger.InfoContext(ctx, "pooly-agent run infrastructure ready",
+			slog.String("component", "agent"),
+			slog.String("status", "ready"),
+		)
+	}
+	<-ctx.Done()
+	cancelWatchdog()
+	if opts.API != nil {
+		opts.API.SetReady(false)
+	}
+	if opts.Notifier != nil {
+		_ = opts.Notifier.Stopping(context.Background())
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
+	defer cancel()
+	var shutdownErr error
+	if opts.API != nil {
+		shutdownErr = errors.Join(shutdownErr, opts.API.Shutdown(shutdownCtx))
+	}
+	shutdownErr = errors.Join(shutdownErr, closeStore(opts.Store, opts.Logger))
+	if opts.Logger != nil {
+		opts.Logger.Info("pooly-agent shutdown complete",
+			slog.String("component", "agent"),
+			slog.String("reason", ctx.Err().Error()),
+		)
+	}
+	return shutdownErr
+}
+
+func closeStore(store Store, logger *slog.Logger) error {
+	if store == nil {
+		return nil
+	}
+	if err := store.Close(); err != nil {
+		if logger != nil {
+			logger.Warn("storage close failed",
+				slog.String("component", "storage"),
+				slog.String("error_class", "closed"),
+			)
+		}
+		return err
 	}
 	return nil
 }

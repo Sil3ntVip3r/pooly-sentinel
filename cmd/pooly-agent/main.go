@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/api"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/filewatch"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/journal"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/platform"
@@ -20,8 +21,10 @@ import (
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/logging"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/notify"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/reports"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/rules"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/systemdnotify"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/version"
 )
 
@@ -59,9 +62,89 @@ func runCLI(args []string) error {
 		return incidentsCommand(args[1:])
 	case "notifications":
 		return notificationsCommand(args[1:])
+	case "api":
+		return apiCommand(args[1:])
+	case "reports":
+		return reportsCommand(args[1:])
 	default:
 		return fmt.Errorf("unknown pooly-agent command %q", args[0])
 	}
+}
+
+func apiCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: pooly-agent api check --config <path>")
+	}
+	switch args[0] {
+	case "check":
+		configPath, err := parseConfigFlag(args[1:])
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cfg, err := config.LoadFile(ctx, configPath)
+		if err != nil {
+			return err
+		}
+		server, err := api.NewServer(apiOptionsFromConfig(cfg, nil))
+		if err != nil {
+			return err
+		}
+		fmt.Printf("api OK: enabled=%t listen=%s reports=%t\n", cfg.API.Enabled, config.EffectiveAPIListen(cfg.API), server != nil && cfg.Reports.Enabled)
+		return nil
+	default:
+		return fmt.Errorf("unknown api command %q", args[0])
+	}
+}
+
+func reportsCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: pooly-agent reports preview --config <path> [--json]")
+	}
+	switch args[0] {
+	case "preview":
+		return reportsPreviewCommand(args[1:])
+	default:
+		return fmt.Errorf("unknown reports command %q", args[0])
+	}
+}
+
+func reportsPreviewCommand(args []string) error {
+	configPath, jsonOutput, err := parseReportsPreviewFlags(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	store, err := openConfiguredStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	summary, err := reports.Generate(ctx, store, reportsOptionsFromConfig(cfg))
+	if err != nil {
+		return err
+	}
+	if jsonOutput {
+		data, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	fmt.Printf("report generated=%s storage=%t schema=%d open_incidents=%d resolved_incidents=%d deliveries=%d\n",
+		summary.GeneratedAt.Format(time.RFC3339), summary.StorageAvailable, summary.SchemaVersion,
+		summary.IncidentStatusCounts["open"], summary.IncidentStatusCounts["resolved"], sumCounts(summary.NotificationDeliveryCounts))
+	for severity, count := range summary.OpenIncidentsBySeverity {
+		fmt.Printf("open severity=%s count=%d\n", redaction.Redact(severity), count)
+	}
+	return nil
 }
 
 func notificationsCommand(args []string) error {
@@ -381,8 +464,43 @@ func runCommand(args []string) error {
 		slog.String("config_version", cfg.Version),
 		slog.String("node_id", cfg.Node.ID),
 	)
-	fmt.Println("Pooly Sentinel run placeholder active. Production monitoring is not implemented yet. Press Ctrl+C to exit.")
-	return agent.RunPlaceholder(ctx, logger)
+	store, err := openConfiguredStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	var apiServer *api.Server
+	if cfg.API.Enabled {
+		apiServer, err = api.NewServer(apiOptionsFromConfig(cfg, store))
+		if err != nil {
+			_ = store.Close()
+			return err
+		}
+	}
+	var notifier agent.Notifier
+	var notifyClient systemdnotify.Client
+	watchdogEnabled := false
+	watchdogInterval := cfg.Systemd.WatchdogInterval.Duration
+	if cfg.Systemd.Notify {
+		notifyClient = systemdnotify.NewFromEnv(os.Getenv)
+		notifier = notifyClient
+		watchdogEnabled = cfg.Systemd.Watchdog && notifyClient.WatchdogEnabled()
+		if watchdogEnabled {
+			watchdogInterval = notifyClient.WatchdogInterval(cfg.Systemd.WatchdogInterval.Duration)
+		}
+	}
+	fmt.Println("Pooly Sentinel run infrastructure active. Production scheduling is not implemented. Press Ctrl+C to exit.")
+	return agent.RunInfrastructure(ctx, agent.RuntimeOptions{
+		Logger:           logger,
+		Store:            store,
+		API:              apiServer,
+		Notifier:         notifier,
+		ShutdownTimeout:  cfg.API.ShutdownTimeout.Duration,
+		WatchdogEnabled:  watchdogEnabled,
+		WatchdogInterval: watchdogInterval,
+		RunWatchdog: func(watchdogCtx context.Context) {
+			systemdnotify.RunWatchdog(watchdogCtx, notifyClient, watchdogInterval, logger)
+		},
+	})
 }
 
 func checkCommand(args []string) error {
@@ -645,6 +763,27 @@ func filewatchOptionsFromConfig(cfg config.Config, persist bool, store *storage.
 	return opts
 }
 
+func apiOptionsFromConfig(cfg config.Config, store api.Store) api.Options {
+	return api.Options{
+		Enabled:          cfg.API.Enabled,
+		Listen:           config.EffectiveAPIListen(cfg.API),
+		AllowNonLoopback: cfg.API.AllowNonLoopback,
+		ReadTimeout:      cfg.API.ReadTimeout.Duration,
+		WriteTimeout:     cfg.API.WriteTimeout.Duration,
+		ShutdownTimeout:  cfg.API.ShutdownTimeout.Duration,
+		Store:            store,
+		Reports:          reportsOptionsFromConfig(cfg),
+	}
+}
+
+func reportsOptionsFromConfig(cfg config.Config) reports.Options {
+	return reports.Options{
+		Enabled:         cfg.Reports.Enabled,
+		MaxIncidents:    cfg.Reports.MaxIncidents,
+		IncludeResolved: cfg.Reports.IncludeResolved,
+	}
+}
+
 func notificationServiceFromConfig(cfg config.Config, store notify.Store, receiverID string, dryRunOverride bool, allowDisabled bool) (notify.Service, error) {
 	cfg.Notify.DryRun = dryRunOverride
 	opts, err := notify.OptionsFromConfig(cfg, os.LookupEnv)
@@ -713,6 +852,14 @@ func printNotificationReport(report notify.Report, jsonOutput bool) error {
 	}
 	fmt.Printf("notification results: delivered=%d failed=%d skipped=%d dry_run=%d\n", report.Delivered, report.Failed, report.Skipped, report.DryRun)
 	return nil
+}
+
+func sumCounts(counts map[string]int64) int64 {
+	var total int64
+	for _, count := range counts {
+		total += count
+	}
+	return total
 }
 
 func parseNotificationsTestFlags(args []string) (configPath string, receiverID string, jsonOutput bool, send bool, err error) {
@@ -807,6 +954,30 @@ func parseNotificationsDeliveriesFlags(args []string) (configPath string, incide
 		return "", "", fmt.Errorf("--incident <id> is required")
 	}
 	return configPath, incidentID, nil
+}
+
+func parseReportsPreviewFlags(args []string) (configPath string, jsonOutput bool, err error) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--config":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", false, fmt.Errorf("--config requires a path")
+			}
+			if configPath != "" {
+				return "", false, fmt.Errorf("--config was provided more than once")
+			}
+			configPath = args[i+1]
+			i++
+		case "--json":
+			jsonOutput = true
+		default:
+			return "", false, fmt.Errorf("unknown argument %q", args[i])
+		}
+	}
+	if configPath == "" {
+		return "", false, fmt.Errorf("--config <path> is required")
+	}
+	return configPath, jsonOutput, nil
 }
 
 func parseCollectorRunFlags(args []string) (configPath string, jsonOutput bool, persist bool, err error) {
@@ -1020,10 +1191,13 @@ Usage:
   pooly-agent notifications test --config <path> --receiver <id> [--json] [--dry-run|--send]
   pooly-agent notifications send --config <path> --incident <id> [--json] [--dry-run]
   pooly-agent notifications deliveries --config <path> --incident <id>
+  pooly-agent api check --config <path>
+  pooly-agent reports preview --config <path> [--json]
 
 Task status:
   Core foundation, storage foundation, one-shot Linux collectors, rule evaluation,
-  incident lifecycle persistence, and single-cycle notification delivery are present.
-  Production monitoring, remediation, and scheduling are not implemented.
+  incident lifecycle persistence, single-cycle notification delivery, localhost API,
+  report preview, and systemd readiness wiring are present.
+  Production monitoring, remediation, report delivery, and scheduling are not implemented.
 `)
 }

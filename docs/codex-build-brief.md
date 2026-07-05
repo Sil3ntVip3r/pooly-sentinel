@@ -50,4 +50,6 @@ Task 6 implements deterministic rule evaluation and local incident lifecycle per
 
 Task 7 implements single-cycle notification delivery for incident lifecycle events. Delivery reads existing incidents or incident transitions, renders safe payloads, sends through configured receivers, persists delivery attempts, and updates `last_alerted` only after success.
 
-Production monitoring loops, reporting, API serving, systemd readiness, remediation, updating, and dashboards remain intentionally unimplemented.
+Step 8 implements read-only localhost API endpoints, local report preview from existing storage, systemd readiness/watchdog notification, and infrastructure-only `pooly-agent run` lifecycle wiring.
+
+Production monitoring loops, report delivery, remediation, updating, public API serving, and dashboards remain intentionally unimplemented.

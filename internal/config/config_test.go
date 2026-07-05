@@ -472,6 +472,70 @@ func TestLoadBytesRejectsInvalidNotifyConfig(t *testing.T) {
 	}
 }
 
+func TestLoadBytesRejectsInvalidStep8Config(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+		field string
+	}{
+		{
+			name: "api non loopback rejected",
+			block: `api:
+  enabled: true
+  listen: "0.0.0.0:9587"`,
+			field: "api.listen",
+		},
+		{
+			name: "api timeout too large",
+			block: `api:
+  read_timeout: 31s`,
+			field: "api.read_timeout",
+		},
+		{
+			name: "invalid report limit",
+			block: `reports:
+  max_incidents: 0`,
+			field: "reports.max_incidents",
+		},
+		{
+			name: "invalid watchdog interval",
+			block: `systemd:
+  watchdog_interval: 0s`,
+			field: "systemd.watchdog_interval",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := validConfigYAML + "\n" + tc.block + "\n"
+			if strings.HasPrefix(tc.block, "api:") {
+				input = strings.Replace(validConfigYAML, `api:
+  enabled: true
+  bind: "127.0.0.1:9587"`, tc.block, 1)
+			}
+			_, err := LoadBytes(context.Background(), []byte(input))
+			if err == nil {
+				t.Fatal("LoadBytes() error = nil, want Step 8 validation error")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
+			}
+		})
+	}
+}
+
+func TestLoadBytesAllowsExplicitNonLoopback(t *testing.T) {
+	input := strings.Replace(validConfigYAML, `api:
+  enabled: true
+  bind: "127.0.0.1:9587"`, `api:
+  enabled: true
+  listen: "0.0.0.0:9587"
+  allow_non_loopback: true
+`, 1)
+	if _, err := LoadBytes(context.Background(), []byte(input)); err != nil {
+		t.Fatalf("LoadBytes() explicit non-loopback error = %v", err)
+	}
+}
+
 func TestLoadBytesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

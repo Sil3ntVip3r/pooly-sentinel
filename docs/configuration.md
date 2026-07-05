@@ -12,7 +12,9 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 
 ## Safe Defaults
 
-- API binds to `127.0.0.1:9587`.
+- API is disabled by default and listens on `127.0.0.1:9587` when enabled. Non-loopback listen addresses require explicit `api.allow_non_loopback`.
+- API read, write, and shutdown timeouts are bounded.
+- Local report preview is enabled by default with a bounded incident limit.
 - Logging defaults to text at info level.
 - Production collectors are disabled in the Task 2 foundation.
 - Local file receiver is enabled as the free-core receiver.
@@ -28,7 +30,7 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - filewatch targets must be explicit absolute paths with type `file`, `directory`, or `any`; bounded file hashing uses no-follow descriptor reads and directory manifests expose truncation instead of silently replacing baselines.
 - Rules are typed YAML entries evaluated against collector observations only. They may define warning, failure, and critical thresholds plus sustained and recovery durations.
 - Rule evaluation owns WARN/FAIL/CRITICAL decisions. Collectors still emit facts only.
-- Incident lifecycle persistence is local-only. Task 7 adds single-cycle notification delivery, but production scheduling, remediation, API serving, and systemd readiness are not implemented.
+- Incident lifecycle persistence is local-only. Task 7 adds single-cycle notification delivery. Step 8 adds read-only localhost API, local report preview, and systemd readiness/watchdog wiring, but production scheduling, remediation, report delivery, public API, and dashboards are not implemented.
 - Notification delivery is disabled and dry-run by default. Webhook destinations are referenced by environment variable name, not raw URL.
 
 ## Rules
@@ -38,5 +40,24 @@ Each rule has a stable `id`, `collector`, `metric` or `event_category`, optional
 ## Notifications
 
 Task 7 notification delivery uses `notify.enabled`, `notify.dry_run`, and `notify.receivers`. Receiver destinations are referenced through environment variable names such as `POOLY_WEBHOOK_URL`. Enabled webhook receivers require `url_env`; raw URLs are intentionally absent from the example configuration. Dry-run mode renders safe delivery results without contacting receivers or updating `last_alerted`.
+
+## API, Reports, And systemd
+
+Step 8 uses:
+
+- `api.enabled`
+- `api.listen`
+- `api.allow_non_loopback`
+- `api.read_timeout`
+- `api.write_timeout`
+- `api.shutdown_timeout`
+- `reports.enabled`
+- `reports.max_incidents`
+- `reports.include_resolved`
+- `systemd.notify`
+- `systemd.watchdog`
+- `systemd.watchdog_interval`
+
+The API is read-only and returns JSON. Reports are previews generated from existing storage only. systemd readiness is sent only after config, logging, storage, and the enabled API are initialized.
 
 See `docs/config.example.yaml`.

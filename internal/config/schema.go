@@ -11,6 +11,7 @@ type Config struct {
 	Version      string             `yaml:"version"`
 	Node         NodeConfig         `yaml:"node"`
 	API          APIConfig          `yaml:"api"`
+	Reports      ReportsConfig      `yaml:"reports"`
 	Logging      LoggingConfig      `yaml:"logging"`
 	Commands     CommandPaths       `yaml:"commands"`
 	Resources    ResourcesConfig    `yaml:"resources"`
@@ -37,8 +38,19 @@ type NodeConfig struct {
 }
 
 type APIConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Bind    string `yaml:"bind"`
+	Enabled          bool     `yaml:"enabled"`
+	Bind             string   `yaml:"bind,omitempty"`
+	Listen           string   `yaml:"listen,omitempty"`
+	AllowNonLoopback bool     `yaml:"allow_non_loopback"`
+	ReadTimeout      Duration `yaml:"read_timeout"`
+	WriteTimeout     Duration `yaml:"write_timeout"`
+	ShutdownTimeout  Duration `yaml:"shutdown_timeout"`
+}
+
+type ReportsConfig struct {
+	Enabled         bool `yaml:"enabled"`
+	MaxIncidents    int  `yaml:"max_incidents"`
+	IncludeResolved bool `yaml:"include_resolved"`
 }
 
 type LoggingConfig struct {
@@ -107,6 +119,9 @@ type SystemdConfig struct {
 	Enabled          bool     `yaml:"enabled"`
 	Interval         Duration `yaml:"interval"`
 	Timeout          Duration `yaml:"timeout"`
+	Notify           bool     `yaml:"notify"`
+	Watchdog         bool     `yaml:"watchdog"`
+	WatchdogInterval Duration `yaml:"watchdog_interval"`
 	CriticalServices []string `yaml:"critical_services"`
 }
 

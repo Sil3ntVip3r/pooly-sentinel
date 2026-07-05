@@ -43,3 +43,51 @@ func TestNotificationsValidateAndDryRunCLI(t *testing.T) {
 		t.Fatalf("notifications test error = %v", err)
 	}
 }
+
+func TestAPIAndReportsCLI(t *testing.T) {
+	configPath := writeTempConfig(t)
+	if err := runCLI([]string{"api", "check", "--config", configPath}); err != nil {
+		t.Fatalf("api check error = %v", err)
+	}
+	if err := runCLI([]string{"reports", "preview", "--config", configPath, "--json"}); err != nil {
+		t.Fatalf("reports preview error = %v", err)
+	}
+}
+
+func writeTempConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	data := []byte(`version: "1"
+node:
+  id: "001"
+  name: "Node001 Toronto"
+  hostname: "pooly-ssdnodes-001-toronto"
+  region: "toronto"
+  role: "mining-node"
+  environment: "production"
+  ring: "alpha"
+api:
+  enabled: false
+  listen: "127.0.0.1:9587"
+reports:
+  enabled: true
+  max_incidents: 100
+  include_resolved: true
+logging:
+  level: "info"
+  format: "json"
+receivers:
+  - name: local_file
+    type: file
+    cost_class: free_core
+    enabled: true
+storage:
+  state_dir: ` + dir + `
+  log_dir: ` + filepath.Join(dir, "logs") + `
+`)
+	if err := os.WriteFile(configPath, data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return configPath
+}

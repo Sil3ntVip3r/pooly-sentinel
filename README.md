@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Task 6 rule evaluation and local incident lifecycle persistence are implemented. Production monitoring remains intentionally unimplemented.
+Step 8 localhost API, report preview, and systemd readiness wiring are implemented. Production monitoring remains intentionally unimplemented.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -17,10 +17,13 @@ Task 6 rule evaluation and local incident lifecycle persistence are implemented.
 - Rule evaluation consumes typed observations and supports pending, sustained, critical, and recovery states
 - Incident lifecycle persistence deduplicates, escalates, resolves, and reopens local incident records by stable fingerprint
 - Single-cycle notification delivery can render safe payloads, send configured webhooks, persist attempts, and update `last_alerted` after success
+- Read-only localhost API endpoints expose safe health, readiness, status, incident, delivery-history, and report-summary JSON
+- Local report preview summarizes existing storage only
+- `pooly-agent run` opens storage, optionally starts the localhost API, sends truthful systemd readiness, and handles graceful shutdown
 - Install and uninstall scripts remain stubs only
-- Production monitoring loops, reporting, API serving, remediation, updating, and dashboards are not implemented yet
+- Production monitoring loops, report delivery, remediation, updating, and dashboards are not implemented yet
 
-The current `pooly-agent` entrypoint supports safe placeholder commands, one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, and notification diagnostics. `run` loads configuration and logging, then waits without starting production monitoring.
+The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, and infrastructure-only run lifecycle. `run` does not start production monitoring.
 
 ## Safety Rules
 

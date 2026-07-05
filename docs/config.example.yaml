@@ -10,8 +10,17 @@ node:
   ring: "alpha"
 
 api:
+  enabled: false
+  listen: "127.0.0.1:9587"
+  allow_non_loopback: false
+  read_timeout: 5s
+  write_timeout: 10s
+  shutdown_timeout: 10s
+
+reports:
   enabled: true
-  bind: "127.0.0.1:9587"
+  max_incidents: 100
+  include_resolved: true
 
 logging:
   level: "info"
@@ -79,6 +88,9 @@ systemd:
   enabled: false
   interval: 30s
   timeout: 3s
+  notify: true
+  watchdog: true
+  watchdog_interval: 30s
   critical_services:
     - ssh.service
     - fail2ban.service

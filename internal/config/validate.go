@@ -158,11 +158,8 @@ func (c Config) Validate() error {
 	validateNoSecretLiteral(&errs, "node.environment", c.Node.Environment)
 	validateNoSecretLiteral(&errs, "node.ring", c.Node.Ring)
 
-	if c.API.Bind == "" {
-		errs.add("api.bind", "is required")
-	} else {
-		validateLoopbackBind(&errs, "api.bind", c.API.Bind)
-	}
+	validateAPI(&errs, c.API)
+	validateReports(&errs, c.Reports)
 
 	validateOneOf(&errs, "logging.format", c.Logging.Format, "text", "json")
 	validateOneOf(&errs, "logging.level", c.Logging.Level, "debug", "info", "warn", "error")
@@ -171,8 +168,12 @@ func (c Config) Validate() error {
 	validateResources(&errs, c.Resources)
 	validateDuration(&errs, "systemd.interval", c.Systemd.Interval.Duration)
 	validateDuration(&errs, "systemd.timeout", c.Systemd.Timeout.Duration)
+	validateDuration(&errs, "systemd.watchdog_interval", c.Systemd.WatchdogInterval.Duration)
 	if c.Systemd.Interval.Duration > 0 && c.Systemd.Timeout.Duration >= c.Systemd.Interval.Duration {
 		errs.add("systemd.timeout", "must be less than systemd.interval")
+	}
+	if c.Systemd.WatchdogInterval.Duration > 5*time.Minute {
+		errs.add("systemd.watchdog_interval", "must be 5m or less")
 	}
 	validateStringListLimit(&errs, "systemd.critical_services", c.Systemd.CriticalServices, 64)
 	for i, service := range c.Systemd.CriticalServices {
@@ -226,6 +227,28 @@ func (c Config) Validate() error {
 		return errs
 	}
 	return nil
+}
+
+func validateAPI(errs *ValidationErrors, cfg APIConfig) {
+	listen := EffectiveAPIListen(cfg)
+	if listen == "" {
+		errs.add("api.listen", "is required")
+	} else {
+		validateAPIBind(errs, "api.listen", listen, cfg.AllowNonLoopback)
+	}
+	if cfg.Bind != "" {
+		validateAPIBind(errs, "api.bind", cfg.Bind, cfg.AllowNonLoopback)
+	}
+	if cfg.Listen != "" {
+		validateAPIBind(errs, "api.listen", cfg.Listen, cfg.AllowNonLoopback)
+	}
+	validateDurationLimit(errs, "api.read_timeout", cfg.ReadTimeout.Duration, 30*time.Second)
+	validateDurationLimit(errs, "api.write_timeout", cfg.WriteTimeout.Duration, 30*time.Second)
+	validateDurationLimit(errs, "api.shutdown_timeout", cfg.ShutdownTimeout.Duration, 30*time.Second)
+}
+
+func validateReports(errs *ValidationErrors, cfg ReportsConfig) {
+	validateIntRange(errs, "reports.max_incidents", cfg.MaxIncidents, 1, 1000)
 }
 
 func validateNotify(errs *ValidationErrors, cfg NotifyConfig) {
@@ -660,7 +683,7 @@ func validateInt64Range(errs *ValidationErrors, field string, value int64, min i
 	}
 }
 
-func validateLoopbackBind(errs *ValidationErrors, field, bind string) {
+func validateAPIBind(errs *ValidationErrors, field, bind string, allowNonLoopback bool) {
 	host, port, err := net.SplitHostPort(bind)
 	if err != nil {
 		errs.add(field, "must be host:port")
@@ -674,11 +697,21 @@ func validateLoopbackBind(errs *ValidationErrors, field, bind string) {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		errs.add(field, "host must be localhost or a loopback IP")
+		errs.add(field, "host must be localhost or an IP address")
 		return
 	}
-	if !ip.IsLoopback() {
-		errs.add(field, "must bind to localhost or loopback only")
+	if !ip.IsLoopback() && !allowNonLoopback {
+		errs.add(field, "must bind to localhost or loopback unless api.allow_non_loopback is explicitly true")
+	}
+}
+
+func validateDurationLimit(errs *ValidationErrors, field string, d time.Duration, max time.Duration) {
+	if d <= 0 {
+		errs.add(field, "must be greater than zero")
+		return
+	}
+	if d > max {
+		errs.add(field, "must be "+max.String()+" or less")
 	}
 }
 
