@@ -1,3 +1,3 @@
 package journal
 
-// Auth placeholders reserve SSH, sudo, and login event interpretation.
+// Auth stream categories are normalized by parser.go during Task 5 collection.

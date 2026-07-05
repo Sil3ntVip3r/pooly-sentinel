@@ -1,3 +1,3 @@
 package systemd
 
-// Unit drift placeholders reserve unit file and drop-in change detection.
+// Unit-file drift detection is deferred beyond Task 5.

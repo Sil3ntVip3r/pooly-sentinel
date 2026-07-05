@@ -1,3 +1,3 @@
 package filewatch
 
-// Rebuild placeholders reserve watcher reconstruction.
+// Event-watch rebuild handling is deferred beyond Task 5 manual verification.

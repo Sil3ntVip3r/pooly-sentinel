@@ -1,3 +1,3 @@
 package journal
 
-// Service error placeholders reserve systemd unit event interpretation.
+// Service stream categories are normalized by parser.go during Task 5 collection.

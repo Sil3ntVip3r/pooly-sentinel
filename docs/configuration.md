@@ -21,5 +21,10 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - Storage filenames must be plain filenames, not paths.
 - Resource collectors are individually configurable and collect observations only; they do not evaluate alert thresholds.
 - Resource `timeout` must be less than `interval`, mount paths must be absolute, and glob patterns are validated.
+- Task 5 collectors for systemd, journald, SSH, and file state are disabled by default and can be run manually for diagnostics.
+- systemd collection uses configured `critical_services` as factual targets only; no service restart, reload, enable, disable, or remediation is performed.
+- journal streams use bounded JSON output, cursor state, field-length limits, and redacted summaries; raw journal dumps and full `MESSAGE` values are not emitted.
+- SSH collection uses effective configuration and listening socket facts only; it does not edit config files or restart SSH.
+- filewatch targets must be explicit absolute paths with type `file`, `directory`, or `any`; bounded file hashing uses no-follow descriptor reads and directory manifests expose truncation instead of silently replacing baselines.
 
 See `docs/config.example.yaml`.

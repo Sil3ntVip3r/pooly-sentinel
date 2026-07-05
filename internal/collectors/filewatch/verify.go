@@ -1,3 +1,3 @@
 package filewatch
 
-// Verify placeholders reserve post-event validation flow.
+// Post-event validation is deferred beyond Task 5 manual verification.

@@ -1,3 +1,3 @@
 package filewatch
 
-// Package filewatch will watch sensitive paths and emit verification-driven findings.
+// Package filewatch collects metadata for explicitly configured sensitive paths.

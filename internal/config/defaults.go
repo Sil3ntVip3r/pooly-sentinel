@@ -54,6 +54,7 @@ func Default() Config {
 		Systemd: SystemdConfig{
 			Enabled:  false,
 			Interval: Duration{Duration: 30 * time.Second},
+			Timeout:  Duration{Duration: 3 * time.Second},
 			CriticalServices: []string{
 				"ssh.service",
 				"fail2ban.service",
@@ -64,6 +65,7 @@ func Default() Config {
 		SSH: SSHConfig{
 			Enabled:     false,
 			Interval:    Duration{Duration: 5 * time.Minute},
+			Timeout:     Duration{Duration: 3 * time.Second},
 			EventDriven: true,
 			Expected: SSHExpectedConfig{
 				Ports:                        []int{6200},
@@ -78,26 +80,39 @@ func Default() Config {
 			},
 		},
 		Journal: JournalConfig{
-			Auth: TimedConfig{
-				Enabled:  false,
-				Interval: Duration{Duration: 10 * time.Second},
-				Timeout:  Duration{Duration: 3 * time.Second},
+			Auth: JournalStreamConfig{
+				Enabled:       false,
+				Interval:      Duration{Duration: 10 * time.Second},
+				Timeout:       Duration{Duration: 3 * time.Second},
+				MaxRecords:    100,
+				MaxBytes:      256 * 1024,
+				MaxFieldBytes: 512,
 			},
-			Services: TimedConfig{
-				Enabled:  false,
-				Interval: Duration{Duration: 30 * time.Second},
-				Timeout:  Duration{Duration: 3 * time.Second},
+			Services: JournalStreamConfig{
+				Enabled:       false,
+				Interval:      Duration{Duration: 30 * time.Second},
+				Timeout:       Duration{Duration: 3 * time.Second},
+				MaxRecords:    100,
+				MaxBytes:      256 * 1024,
+				MaxFieldBytes: 512,
 			},
-			Kernel: TimedConfig{
-				Enabled:  false,
-				Interval: Duration{Duration: 60 * time.Second},
-				Timeout:  Duration{Duration: 3 * time.Second},
+			Kernel: JournalStreamConfig{
+				Enabled:       false,
+				Interval:      Duration{Duration: 60 * time.Second},
+				Timeout:       Duration{Duration: 3 * time.Second},
+				MaxRecords:    100,
+				MaxBytes:      256 * 1024,
+				MaxFieldBytes: 512,
 			},
 		},
 		Filewatch: FilewatchConfig{
 			Enabled:                false,
 			Debounce:               Duration{Duration: 2 * time.Second},
 			PeriodicVerifyInterval: Duration{Duration: 5 * time.Minute},
+			Timeout:                Duration{Duration: 3 * time.Second},
+			MaxFileBytes:           1024 * 1024,
+			MaxDirectoryEntries:    256,
+			Targets:                []FilewatchTargetConfig{},
 		},
 		Audit: AuditConfig{
 			Enabled:     false,

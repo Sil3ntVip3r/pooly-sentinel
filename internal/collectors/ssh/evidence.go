@@ -1,3 +1,3 @@
 package ssh
 
-// Evidence placeholders reserve local-only SSH evidence handling.
+// Local SSH evidence snapshots are deferred beyond Task 5.

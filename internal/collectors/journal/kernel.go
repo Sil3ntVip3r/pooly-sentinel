@@ -1,3 +1,3 @@
 package journal
 
-// Kernel placeholders reserve OOM, disk, and filesystem event interpretation.
+// Kernel stream categories are normalized by parser.go during Task 5 collection.

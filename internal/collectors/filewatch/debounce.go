@@ -1,3 +1,3 @@
 package filewatch
 
-// Debounce placeholders reserve event coalescing.
+// Event coalescing is deferred beyond Task 5 manual verification.

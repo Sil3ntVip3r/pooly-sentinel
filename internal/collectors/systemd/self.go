@@ -1,3 +1,3 @@
 package systemd
 
-// Self-service placeholders reserve pooly-sentinel-agent.service health checks.
+// Agent self-service health checks are deferred beyond Task 5.

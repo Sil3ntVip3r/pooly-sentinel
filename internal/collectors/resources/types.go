@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/platform"
 )
 
 type MetricKind string
@@ -31,6 +32,10 @@ const (
 	ErrorTimeout          ErrorClass = "timeout"
 	ErrorCounterReset     ErrorClass = "counter_reset"
 	ErrorState            ErrorClass = "state_error"
+	ErrorCommand          ErrorClass = "command_error"
+	ErrorOversized        ErrorClass = "oversized"
+	ErrorSourceChanged    ErrorClass = "source_changed"
+	ErrorSourceType       ErrorClass = "source_type"
 	ErrorInternal         ErrorClass = "internal_error"
 )
 
@@ -43,17 +48,27 @@ type Metric struct {
 	Timestamp time.Time         `json:"timestamp"`
 }
 
+type Event struct {
+	Category  string            `json:"category"`
+	Timestamp time.Time         `json:"timestamp"`
+	Summary   string            `json:"summary,omitempty"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	Fields    map[string]string `json:"fields,omitempty"`
+}
+
 type Observation struct {
-	Collector  string        `json:"collector"`
-	Target     string        `json:"target"`
-	Timestamp  time.Time     `json:"timestamp"`
-	Duration   time.Duration `json:"duration"`
-	Success    bool          `json:"success"`
-	Supported  bool          `json:"supported"`
-	Stale      bool          `json:"stale"`
-	Metrics    []Metric      `json:"metrics,omitempty"`
-	Summary    string        `json:"summary,omitempty"`
-	ErrorClass ErrorClass    `json:"error_class,omitempty"`
+	Collector  string            `json:"collector"`
+	Target     string            `json:"target"`
+	Timestamp  time.Time         `json:"timestamp"`
+	Duration   time.Duration     `json:"duration"`
+	Success    bool              `json:"success"`
+	Supported  bool              `json:"supported"`
+	Stale      bool              `json:"stale"`
+	Metrics    []Metric          `json:"metrics,omitempty"`
+	Summary    string            `json:"summary,omitempty"`
+	ErrorClass ErrorClass        `json:"error_class,omitempty"`
+	Fields     map[string]string `json:"fields,omitempty"`
+	Events     []Event           `json:"events,omitempty"`
 }
 
 type FileSource interface {
@@ -86,7 +101,7 @@ type Options struct {
 	Source              FileSource
 	State               StateStore
 	Persist             bool
-	PlatformSupported   bool
+	PlatformSupported   *bool
 	FilesystemMounts    []string
 	DiskAutoDiscover    bool
 	DiskExclude         []string
@@ -113,13 +128,19 @@ type CollectorInfo struct {
 var metricNamePattern = regexp.MustCompile(`^pooly_[a-z0-9_]+$`)
 
 var allowedLabels = map[string]struct{}{
-	"collector":     {},
-	"cpu":           {},
-	"mount":         {},
-	"device":        {},
-	"interface":     {},
-	"pressure_type": {},
-	"window":        {},
+	"collector":      {},
+	"cpu":            {},
+	"mount":          {},
+	"device":         {},
+	"interface":      {},
+	"pressure_type":  {},
+	"window":         {},
+	"unit":           {},
+	"stream":         {},
+	"directive":      {},
+	"port":           {},
+	"watch":          {},
+	"event_category": {},
 }
 
 func NewMetric(name string, value float64, kind MetricKind, unit string, labels map[string]string, ts time.Time) (Metric, error) {
@@ -202,9 +223,6 @@ func optionsWithDefaults(opts Options) Options {
 	if opts.Source == nil {
 		opts.Source = OSFileSource{}
 	}
-	if !opts.PlatformSupported {
-		opts.PlatformSupported = runtime.GOOS == "linux"
-	}
 	if len(opts.FilesystemMounts) == 0 {
 		opts.FilesystemMounts = []string{"/", "/home", "/var", "/var/log", "/var/lib", "/var/lib/pooly-sentinel", "/var/log/pooly-sentinel"}
 	}
@@ -220,7 +238,7 @@ func optionsWithDefaults(opts Options) Options {
 func DefaultOptions() Options {
 	return Options{
 		Source:              OSFileSource{},
-		PlatformSupported:   runtime.GOOS == "linux",
+		PlatformSupported:   nil,
 		PressureMissingOK:   true,
 		CPUEnabled:          true,
 		LoadEnabled:         true,
@@ -237,15 +255,16 @@ func DefaultOptions() Options {
 
 func ListCollectors(opts Options) []CollectorInfo {
 	opts = optionsWithDefaults(opts)
+	supported := platform.Supported(opts.PlatformSupported)
 	return []CollectorInfo{
-		{Name: "cpu", Enabled: opts.CPUEnabled, Supported: opts.PlatformSupported},
-		{Name: "load", Enabled: opts.LoadEnabled, Supported: opts.PlatformSupported},
-		{Name: "memory", Enabled: opts.MemoryEnabled, Supported: opts.PlatformSupported},
-		{Name: "pressure", Enabled: opts.PressureEnabled, Supported: opts.PlatformSupported},
-		{Name: "filesystem", Enabled: opts.FilesystemEnabled, Supported: opts.PlatformSupported},
-		{Name: "diskio", Enabled: opts.DiskIOEnabled, Supported: opts.PlatformSupported},
-		{Name: "network", Enabled: opts.NetworkEnabled, Supported: opts.PlatformSupported},
-		{Name: "uptime", Enabled: opts.UptimeEnabled, Supported: opts.PlatformSupported},
+		{Name: "cpu", Enabled: opts.CPUEnabled, Supported: supported},
+		{Name: "load", Enabled: opts.LoadEnabled, Supported: supported},
+		{Name: "memory", Enabled: opts.MemoryEnabled, Supported: supported},
+		{Name: "pressure", Enabled: opts.PressureEnabled, Supported: supported},
+		{Name: "filesystem", Enabled: opts.FilesystemEnabled, Supported: supported},
+		{Name: "diskio", Enabled: opts.DiskIOEnabled, Supported: supported},
+		{Name: "network", Enabled: opts.NetworkEnabled, Supported: supported},
+		{Name: "uptime", Enabled: opts.UptimeEnabled, Supported: supported},
 	}
 }
 
@@ -257,7 +276,7 @@ func Collect(ctx context.Context, opts Options) []Observation {
 	if err := ctx.Err(); err != nil {
 		return []Observation{failureObservation("resources", "all", time.Now(), ErrorTimeout, err.Error())}
 	}
-	if !opts.PlatformSupported {
+	if !platform.Supported(opts.PlatformSupported) {
 		var observations []Observation
 		for _, info := range ListCollectors(opts) {
 			if info.Enabled {

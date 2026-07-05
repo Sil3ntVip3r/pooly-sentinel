@@ -1,3 +1,3 @@
 package filewatch
 
-// Overflow placeholders reserve degraded watcher and full-rescan behavior.
+// Event-watch overflow handling is deferred beyond Task 5 manual verification.

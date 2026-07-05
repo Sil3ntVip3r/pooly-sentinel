@@ -42,4 +42,4 @@ Task 1 does not implement production monitoring.
 
 ## Current Implementation Status
 
-Task 4 implements Linux resource collectors only. Production monitoring loops, notification delivery, journald parsing, SSH checks, file watching, systemd service monitoring, rule evaluation, incident lifecycle processing, and systemd readiness remain intentionally unimplemented.
+Task 5 implements Linux systemd, journald, SSH, and file-state collectors in addition to the Task 4 Linux resource collectors. These collectors gather facts only. Production monitoring loops, notification delivery, rule evaluation, alert policy, incident lifecycle processing, reporting, API serving, systemd readiness, remediation, updating, and dashboards remain intentionally unimplemented.

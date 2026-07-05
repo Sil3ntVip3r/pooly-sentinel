@@ -9,7 +9,12 @@ import (
 	"path/filepath"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/filewatch"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/journal"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/platform"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/resources"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/ssh"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/systemd"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/config"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/logging"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
@@ -129,16 +134,16 @@ func doctorCommand(args []string) error {
 
 func collectorsCommand(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: pooly-agent collectors list OR pooly-agent collectors run resources --config <path>")
+		return fmt.Errorf("usage: pooly-agent collectors list OR pooly-agent collectors run <resources|systemd|journal|ssh|filewatch> --config <path>")
 	}
 	switch args[0] {
 	case "list":
 		return collectorsListCommand(args[1:])
 	case "run":
-		if len(args) < 2 || args[1] != "resources" {
-			return fmt.Errorf("usage: pooly-agent collectors run resources --config <path>")
+		if len(args) < 2 {
+			return fmt.Errorf("usage: pooly-agent collectors run <resources|systemd|journal|ssh|filewatch> --config <path>")
 		}
-		return collectorsRunResourcesCommand(args[2:])
+		return collectorsRunCommand(args[1], args[2:])
 	default:
 		return fmt.Errorf("unknown collectors command %q", args[0])
 	}
@@ -161,10 +166,17 @@ func collectorsListCommand(args []string) error {
 	for _, info := range resources.ListCollectors(opts) {
 		fmt.Printf("%s enabled=%t supported=%t\n", info.Name, info.Enabled, info.Supported)
 	}
+	supported := platform.Supported(nil)
+	fmt.Printf("systemd enabled=%t supported=%t\n", cfg.Systemd.Enabled, supported)
+	fmt.Printf("journal.auth enabled=%t supported=%t\n", cfg.Journal.Auth.Enabled, supported)
+	fmt.Printf("journal.services enabled=%t supported=%t\n", cfg.Journal.Services.Enabled, supported)
+	fmt.Printf("journal.kernel enabled=%t supported=%t\n", cfg.Journal.Kernel.Enabled, supported)
+	fmt.Printf("ssh enabled=%t supported=%t\n", cfg.SSH.Enabled, supported)
+	fmt.Printf("filewatch enabled=%t supported=%t targets=%d\n", cfg.Filewatch.Enabled, supported, len(cfg.Filewatch.Targets))
 	return nil
 }
 
-func collectorsRunResourcesCommand(args []string) error {
+func collectorsRunCommand(family string, args []string) error {
 	configPath, jsonOutput, persist, err := parseCollectorRunFlags(args)
 	if err != nil {
 		return err
@@ -189,8 +201,25 @@ func collectorsRunResourcesCommand(args []string) error {
 		}
 		defer store.Close()
 	}
-	opts := resourceOptionsFromConfig(cfg, persist, store)
-	observations := resources.Collect(ctx, opts)
+	var observations []resources.Observation
+	switch family {
+	case "resources":
+		observations = resources.Collect(ctx, resourceOptionsFromConfig(cfg, persist, store))
+	case "systemd":
+		observations = systemd.Collect(ctx, systemdOptionsFromConfig(cfg))
+	case "journal":
+		observations = journal.Collect(ctx, journalOptionsFromConfig(cfg, persist, store))
+	case "ssh":
+		observations = ssh.Collect(ctx, sshOptionsFromConfig(cfg))
+	case "filewatch":
+		observations = filewatch.Collect(ctx, filewatchOptionsFromConfig(cfg, persist, store))
+	default:
+		return fmt.Errorf("unknown collector family %q", family)
+	}
+	return printCollectorObservations(family, observations, jsonOutput)
+}
+
+func printCollectorObservations(family string, observations []resources.Observation, jsonOutput bool) error {
 	if jsonOutput {
 		data, err := json.MarshalIndent(observations, "", "  ")
 		if err != nil {
@@ -211,7 +240,7 @@ func collectorsRunResourcesCommand(args []string) error {
 		}
 	}
 	if resources.RequiredFailed(observations) {
-		return fmt.Errorf("resource collection had required failures")
+		return fmt.Errorf("%s collection had required failures", family)
 	}
 	return nil
 }
@@ -237,6 +266,81 @@ func resourceOptionsFromConfig(cfg config.Config, persist bool, store *storage.S
 	opts.NetworkInclude = cfg.Resources.Network.Include
 	opts.NetworkExclude = cfg.Resources.Network.Exclude
 	opts.UptimeEnabled = cfg.Resources.Enabled && cfg.Resources.Uptime.Enabled
+	return opts
+}
+
+func systemdOptionsFromConfig(cfg config.Config) systemd.Options {
+	opts := systemd.DefaultOptions()
+	opts.SystemctlPath = cfg.Commands.Systemctl
+	opts.Services = append([]string(nil), cfg.Systemd.CriticalServices...)
+	opts.Timeout = cfg.Systemd.Timeout.Duration
+	return opts
+}
+
+func journalOptionsFromConfig(cfg config.Config, persist bool, store *storage.Store) journal.Options {
+	opts := journal.DefaultOptions()
+	opts.JournalctlPath = cfg.Commands.Journalctl
+	opts.Persist = persist
+	if store != nil {
+		opts.State = resources.StorageStateStore{Store: store}
+	}
+	opts.Streams = []journal.StreamConfig{
+		journalStreamFromConfig("auth", cfg.Journal.Auth),
+		journalStreamFromConfig("services", cfg.Journal.Services),
+		journalStreamFromConfig("kernel", cfg.Journal.Kernel),
+	}
+	return opts
+}
+
+func journalStreamFromConfig(name string, stream config.JournalStreamConfig) journal.StreamConfig {
+	return journal.StreamConfig{
+		Name:          name,
+		Enabled:       true,
+		Timeout:       stream.Timeout.Duration,
+		MaxRecords:    stream.MaxRecords,
+		MaxBytes:      stream.MaxBytes,
+		MaxFieldBytes: stream.MaxFieldBytes,
+	}
+}
+
+func sshOptionsFromConfig(cfg config.Config) ssh.Options {
+	opts := ssh.DefaultOptions()
+	opts.SSHDPath = cfg.Commands.SSHD
+	opts.SSPath = cfg.Commands.SS
+	opts.Timeout = cfg.SSH.Timeout.Duration
+	opts.Expected = ssh.ExpectedConfig{
+		Ports:                        append([]int(nil), cfg.SSH.Expected.Ports...),
+		ForbiddenPorts:               append([]int(nil), cfg.SSH.Expected.ForbiddenPorts...),
+		PermitRootLogin:              cfg.SSH.Expected.PermitRootLogin,
+		PasswordAuthentication:       cfg.SSH.Expected.PasswordAuthentication,
+		KbdInteractiveAuthentication: cfg.SSH.Expected.KbdInteractiveAuthentication,
+		PermitEmptyPasswords:         cfg.SSH.Expected.PermitEmptyPasswords,
+		PubkeyAuthentication:         cfg.SSH.Expected.PubkeyAuthentication,
+		StrictModes:                  cfg.SSH.Expected.StrictModes,
+		PermitUserEnvironment:        cfg.SSH.Expected.PermitUserEnvironment,
+	}
+	return opts
+}
+
+func filewatchOptionsFromConfig(cfg config.Config, persist bool, store *storage.Store) filewatch.Options {
+	opts := filewatch.DefaultOptions()
+	opts.Timeout = cfg.Filewatch.Timeout.Duration
+	opts.MaxFileBytes = cfg.Filewatch.MaxFileBytes
+	opts.MaxDirectoryEntries = cfg.Filewatch.MaxDirectoryEntries
+	opts.Persist = persist
+	if store != nil {
+		opts.State = resources.StorageStateStore{Store: store}
+	}
+	for _, target := range cfg.Filewatch.Targets {
+		opts.Targets = append(opts.Targets, filewatch.Target{
+			Name:                target.Name,
+			Path:                target.Path,
+			Type:                target.Type,
+			Hash:                target.Hash,
+			Manifest:            target.Manifest,
+			AllowPrivateKeyHash: target.AllowPrivateKeyHash,
+		})
+	}
 	return opts
 }
 
@@ -320,9 +424,13 @@ Usage:
   pooly-agent doctor --config <path>
   pooly-agent collectors list [--config <path>]
   pooly-agent collectors run resources --config <path> [--json] [--persist|--dry-run]
+  pooly-agent collectors run systemd --config <path> [--json] [--dry-run]
+  pooly-agent collectors run journal --config <path> [--json] [--persist|--dry-run]
+  pooly-agent collectors run ssh --config <path> [--json] [--dry-run]
+  pooly-agent collectors run filewatch --config <path> [--json] [--persist|--dry-run]
 
 Task status:
-  Core foundation, storage foundation, and one-shot Linux resource collectors are present.
-  Production monitoring, alerting, rules, incidents, and service monitoring are not implemented.
+  Core foundation, storage foundation, and one-shot Linux collectors are present.
+  Production monitoring, alerting, rules, incidents, remediation, and scheduling are not implemented.
 `)
 }

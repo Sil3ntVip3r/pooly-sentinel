@@ -13,6 +13,11 @@ import (
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 )
 
+var (
+	unitNamePattern       = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.(?:service|socket|timer|target|mount|path|slice|scope)$`)
+	safeIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+)
+
 type ValidationError struct {
 	Field   string
 	Message string
@@ -71,12 +76,23 @@ func (c Config) Validate() error {
 	validateCommandPaths(&errs, c.Commands)
 	validateResources(&errs, c.Resources)
 	validateDuration(&errs, "systemd.interval", c.Systemd.Interval.Duration)
+	validateDuration(&errs, "systemd.timeout", c.Systemd.Timeout.Duration)
+	if c.Systemd.Interval.Duration > 0 && c.Systemd.Timeout.Duration >= c.Systemd.Interval.Duration {
+		errs.add("systemd.timeout", "must be less than systemd.interval")
+	}
+	validateStringListLimit(&errs, "systemd.critical_services", c.Systemd.CriticalServices, 64)
 	for i, service := range c.Systemd.CriticalServices {
 		field := fmt.Sprintf("systemd.critical_services[%d]", i)
 		requireString(&errs, field, service)
+		validateUnitName(&errs, field, service)
 		validateNoSecretLiteral(&errs, field, service)
 	}
+	validateDuplicateStrings(&errs, "systemd.critical_services", c.Systemd.CriticalServices)
 	validateDuration(&errs, "ssh.interval", c.SSH.Interval.Duration)
+	validateDuration(&errs, "ssh.timeout", c.SSH.Timeout.Duration)
+	if c.SSH.Interval.Duration > 0 && c.SSH.Timeout.Duration >= c.SSH.Interval.Duration {
+		errs.add("ssh.timeout", "must be less than ssh.interval")
+	}
 	validatePorts(&errs, "ssh.expected.ports", c.SSH.Expected.Ports)
 	validatePorts(&errs, "ssh.expected.forbidden_ports", c.SSH.Expected.ForbiddenPorts)
 	validateYesNo(&errs, "ssh.expected.permitrootlogin", c.SSH.Expected.PermitRootLogin)
@@ -87,11 +103,13 @@ func (c Config) Validate() error {
 	validateYesNo(&errs, "ssh.expected.strictmodes", c.SSH.Expected.StrictModes)
 	validateYesNo(&errs, "ssh.expected.permituserenvironment", c.SSH.Expected.PermitUserEnvironment)
 
-	validateTimedConfig(&errs, "journal.auth", c.Journal.Auth)
-	validateTimedConfig(&errs, "journal.services", c.Journal.Services)
-	validateTimedConfig(&errs, "journal.kernel", c.Journal.Kernel)
+	validateJournalStream(&errs, "journal.auth", c.Journal.Auth)
+	validateJournalStream(&errs, "journal.services", c.Journal.Services)
+	validateJournalStream(&errs, "journal.kernel", c.Journal.Kernel)
 	validateDuration(&errs, "filewatch.debounce", c.Filewatch.Debounce.Duration)
 	validateDuration(&errs, "filewatch.periodic_verify_interval", c.Filewatch.PeriodicVerifyInterval.Duration)
+	validateDuration(&errs, "filewatch.timeout", c.Filewatch.Timeout.Duration)
+	validateFilewatch(&errs, c.Filewatch)
 
 	validateOneOf(&errs, "audit.mode", c.Audit.Mode, "observe_only")
 	if c.Audit.ManageRules {
@@ -144,6 +162,17 @@ func validateDuration(errs *ValidationErrors, field string, d time.Duration) {
 func validateTimedConfig(errs *ValidationErrors, prefix string, cfg TimedConfig) {
 	validateDuration(errs, prefix+".interval", cfg.Interval.Duration)
 	validateDuration(errs, prefix+".timeout", cfg.Timeout.Duration)
+}
+
+func validateJournalStream(errs *ValidationErrors, prefix string, cfg JournalStreamConfig) {
+	validateDuration(errs, prefix+".interval", cfg.Interval.Duration)
+	validateDuration(errs, prefix+".timeout", cfg.Timeout.Duration)
+	if cfg.Interval.Duration > 0 && cfg.Timeout.Duration >= cfg.Interval.Duration {
+		errs.add(prefix+".timeout", "must be less than "+prefix+".interval")
+	}
+	validateIntRange(errs, prefix+".max_records", cfg.MaxRecords, 1, 1000)
+	validateInt64Range(errs, prefix+".max_bytes", cfg.MaxBytes, 4096, 4*1024*1024)
+	validateIntRange(errs, prefix+".max_field_bytes", cfg.MaxFieldBytes, 64, 4096)
 }
 
 func validateResources(errs *ValidationErrors, cfg ResourcesConfig) {
@@ -207,6 +236,70 @@ func validateDuplicateStrings(errs *ValidationErrors, field string, values []str
 			errs.add(fmt.Sprintf("%s[%d]", field, i), "duplicates another entry")
 		}
 		seen[value] = struct{}{}
+	}
+}
+
+func validateFilewatch(errs *ValidationErrors, cfg FilewatchConfig) {
+	if cfg.PeriodicVerifyInterval.Duration > 0 && cfg.Timeout.Duration >= cfg.PeriodicVerifyInterval.Duration {
+		errs.add("filewatch.timeout", "must be less than filewatch.periodic_verify_interval")
+	}
+	validateInt64Range(errs, "filewatch.max_file_bytes", cfg.MaxFileBytes, 1, 128*1024*1024)
+	validateIntRange(errs, "filewatch.max_directory_entries", cfg.MaxDirectoryEntries, 1, 10000)
+	if len(cfg.Targets) > 128 {
+		errs.add("filewatch.targets", "must contain no more than 128 entries")
+	}
+	seen := map[string]struct{}{}
+	seenNames := map[string]struct{}{}
+	for i, target := range cfg.Targets {
+		prefix := fmt.Sprintf("filewatch.targets[%d]", i)
+		requireString(errs, prefix+".name", target.Name)
+		requireString(errs, prefix+".path", target.Path)
+		validateNoSecretLiteral(errs, prefix+".name", target.Name)
+		validateNoSecretLiteral(errs, prefix+".path", target.Path)
+		validateOneOf(errs, prefix+".type", target.Type, "file", "directory", "any")
+		if target.Path != "" {
+			if !filepath.IsAbs(target.Path) {
+				errs.add(prefix+".path", "must be an absolute path")
+			}
+			clean := filepath.Clean(target.Path)
+			if _, ok := seen[clean]; ok {
+				errs.add(prefix+".path", "duplicates another target after normalization")
+			}
+			seen[clean] = struct{}{}
+		}
+		if target.Name != "" {
+			if !safeIdentifierPattern.MatchString(target.Name) {
+				errs.add(prefix+".name", "must contain only letters, numbers, dot, underscore, or dash")
+			}
+			if _, ok := seenNames[target.Name]; ok {
+				errs.add(prefix+".name", "duplicates another target name")
+			}
+			seenNames[target.Name] = struct{}{}
+		}
+		if target.AllowPrivateKeyHash && !target.Hash {
+			errs.add(prefix+".allow_private_key_hash", "requires hash to be true")
+		}
+	}
+}
+
+func validateUnitName(errs *ValidationErrors, field string, value string) {
+	if value == "" {
+		return
+	}
+	if !unitNamePattern.MatchString(value) {
+		errs.add(field, "must be a safe systemd unit name")
+	}
+}
+
+func validateIntRange(errs *ValidationErrors, field string, value int, min int, max int) {
+	if value < min || value > max {
+		errs.add(field, fmt.Sprintf("must be between %d and %d", min, max))
+	}
+}
+
+func validateInt64Range(errs *ValidationErrors, field string, value int64, min int64, max int64) {
+	if value < min || value > max {
+		errs.add(field, fmt.Sprintf("must be between %d and %d", min, max))
 	}
 }
 

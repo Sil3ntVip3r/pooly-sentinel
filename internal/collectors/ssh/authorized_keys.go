@@ -1,3 +1,3 @@
 package ssh
 
-// Authorized key placeholders reserve summaries without exposing key material.
+// Authorized-key content collection is deferred beyond Task 5.

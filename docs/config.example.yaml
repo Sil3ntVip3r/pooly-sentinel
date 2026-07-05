@@ -78,6 +78,7 @@ resources:
 systemd:
   enabled: false
   interval: 30s
+  timeout: 3s
   critical_services:
     - ssh.service
     - fail2ban.service
@@ -87,6 +88,7 @@ systemd:
 ssh:
   enabled: false
   interval: 5m
+  timeout: 3s
   event_driven: true
   expected:
     ports: [6200]
@@ -104,19 +106,44 @@ journal:
     enabled: false
     interval: 10s
     timeout: 3s
+    max_records: 100
+    max_bytes: 262144
+    max_field_bytes: 512
   services:
     enabled: false
     interval: 30s
     timeout: 3s
+    max_records: 100
+    max_bytes: 262144
+    max_field_bytes: 512
   kernel:
     enabled: false
     interval: 60s
     timeout: 3s
+    max_records: 100
+    max_bytes: 262144
+    max_field_bytes: 512
 
 filewatch:
   enabled: false
   debounce: 2s
   periodic_verify_interval: 5m
+  timeout: 3s
+  max_file_bytes: 1048576
+  max_directory_entries: 256
+  targets:
+    - name: sshd_config
+      path: /etc/ssh/sshd_config
+      type: file
+      hash: true
+      manifest: false
+      allow_private_key_hash: false
+    - name: sudoers_dir
+      path: /etc/sudoers.d
+      type: directory
+      hash: false
+      manifest: true
+      allow_private_key_hash: false
 
 audit:
   enabled: false

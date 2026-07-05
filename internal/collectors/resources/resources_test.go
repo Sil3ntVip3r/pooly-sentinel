@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/platform"
 )
 
 func TestCPUCollectorDeltas(t *testing.T) {
@@ -280,7 +282,7 @@ func TestContextStateUnsupportedAndMetricValidation(t *testing.T) {
 	if obs.ErrorClass != ErrorState {
 		t.Fatalf("state failure = %+v", obs)
 	}
-	all := Collect(context.Background(), Options{PlatformSupported: false, CPUEnabled: true, MemoryEnabled: true})
+	all := Collect(context.Background(), Options{PlatformSupported: platform.Bool(false), CPUEnabled: true, MemoryEnabled: true})
 	if len(all) == 0 || all[0].ErrorClass != ErrorUnsupported {
 		t.Fatalf("unsupported collection = %+v", all)
 	}
@@ -303,7 +305,7 @@ func testOptions(files map[string]string, state StateStore) Options {
 		Source:              MapFileSource{Files: files},
 		State:               state,
 		Persist:             state != nil,
-		PlatformSupported:   true,
+		PlatformSupported:   platform.Bool(true),
 		PressureMissingOK:   true,
 		CPUEnabled:          true,
 		LoadEnabled:         true,

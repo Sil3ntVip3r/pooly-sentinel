@@ -224,6 +224,70 @@ func TestLoadBytesRejectsInvalidResourceConfig(t *testing.T) {
 	}
 }
 
+func TestLoadBytesRejectsInvalidTask5Config(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+		field string
+	}{
+		{
+			name: "systemd unsafe unit",
+			block: `systemd:
+  timeout: 3s
+  critical_services:
+    - ../../ssh.service`,
+			field: "systemd.critical_services[0]",
+		},
+		{
+			name: "journal excessive records",
+			block: `journal:
+  auth:
+    max_records: 100000`,
+			field: "journal.auth.max_records",
+		},
+		{
+			name: "ssh timeout greater than interval",
+			block: `ssh:
+  interval: 3s
+  timeout: 3s`,
+			field: "ssh.timeout",
+		},
+		{
+			name: "filewatch relative path",
+			block: `filewatch:
+  targets:
+    - name: sshd_config
+      path: etc/ssh/sshd_config
+      type: file`,
+			field: "filewatch.targets[0].path",
+		},
+		{
+			name: "filewatch duplicate target",
+			block: `filewatch:
+  targets:
+    - name: one
+      path: /etc/ssh/sshd_config
+      type: file
+    - name: two
+      path: /etc/ssh/../ssh/sshd_config
+      type: file`,
+			field: "filewatch.targets[1].path",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := validConfigYAML + "\n" + tc.block + "\n"
+			_, err := LoadBytes(context.Background(), []byte(input))
+			if err == nil {
+				t.Fatal("LoadBytes() error = nil, want Task 5 validation error")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
+			}
+		})
+	}
+}
+
 func TestLoadBytesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -1,3 +1,3 @@
 package systemd
 
-// Failed unit placeholders reserve systemd failed-unit discovery.
+// Failed-unit discovery is deferred beyond the Task 5 configured-unit collector.

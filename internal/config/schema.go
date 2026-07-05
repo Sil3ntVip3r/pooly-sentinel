@@ -104,12 +104,14 @@ type NetworkConfig struct {
 type SystemdConfig struct {
 	Enabled          bool     `yaml:"enabled"`
 	Interval         Duration `yaml:"interval"`
+	Timeout          Duration `yaml:"timeout"`
 	CriticalServices []string `yaml:"critical_services"`
 }
 
 type SSHConfig struct {
 	Enabled     bool              `yaml:"enabled"`
 	Interval    Duration          `yaml:"interval"`
+	Timeout     Duration          `yaml:"timeout"`
 	EventDriven bool              `yaml:"event_driven"`
 	Expected    SSHExpectedConfig `yaml:"expected"`
 }
@@ -127,15 +129,37 @@ type SSHExpectedConfig struct {
 }
 
 type JournalConfig struct {
-	Auth     TimedConfig `yaml:"auth"`
-	Services TimedConfig `yaml:"services"`
-	Kernel   TimedConfig `yaml:"kernel"`
+	Auth     JournalStreamConfig `yaml:"auth"`
+	Services JournalStreamConfig `yaml:"services"`
+	Kernel   JournalStreamConfig `yaml:"kernel"`
+}
+
+type JournalStreamConfig struct {
+	Enabled       bool     `yaml:"enabled"`
+	Interval      Duration `yaml:"interval"`
+	Timeout       Duration `yaml:"timeout"`
+	MaxRecords    int      `yaml:"max_records"`
+	MaxBytes      int64    `yaml:"max_bytes"`
+	MaxFieldBytes int      `yaml:"max_field_bytes"`
 }
 
 type FilewatchConfig struct {
-	Enabled                bool     `yaml:"enabled"`
-	Debounce               Duration `yaml:"debounce"`
-	PeriodicVerifyInterval Duration `yaml:"periodic_verify_interval"`
+	Enabled                bool                    `yaml:"enabled"`
+	Debounce               Duration                `yaml:"debounce"`
+	PeriodicVerifyInterval Duration                `yaml:"periodic_verify_interval"`
+	Timeout                Duration                `yaml:"timeout"`
+	MaxFileBytes           int64                   `yaml:"max_file_bytes"`
+	MaxDirectoryEntries    int                     `yaml:"max_directory_entries"`
+	Targets                []FilewatchTargetConfig `yaml:"targets"`
+}
+
+type FilewatchTargetConfig struct {
+	Name                string `yaml:"name"`
+	Path                string `yaml:"path"`
+	Type                string `yaml:"type"`
+	Hash                bool   `yaml:"hash"`
+	Manifest            bool   `yaml:"manifest"`
+	AllowPrivateKeyHash bool   `yaml:"allow_private_key_hash"`
 }
 
 type AuditConfig struct {

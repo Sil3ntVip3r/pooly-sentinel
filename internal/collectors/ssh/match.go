@@ -1,3 +1,3 @@
 package ssh
 
-// Match placeholders reserve sshd -T -C scenario checks.
+// Additional sshd match-scenario checks are deferred beyond Task 5.
