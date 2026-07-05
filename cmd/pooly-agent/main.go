@@ -630,7 +630,7 @@ func doctorCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Pooly Sentinel doctor: storage foundation checks only. Scheduler and collectors are not run.")
+	fmt.Println("Pooly Sentinel doctor: safe alpha checks only. Scheduler, collectors, and notifications are not run.")
 	checks := storage.RunDoctor(ctx, storage.DoctorOptions{
 		StateDir:           cfg.Storage.StateDir,
 		LogDir:             cfg.Storage.LogDir,
@@ -639,6 +639,7 @@ func doctorCommand(args []string) error {
 		BusyTimeout:        cfg.Storage.SQLite.BusyTimeout.Duration,
 		WAL:                cfg.Storage.SQLite.WAL,
 	})
+	checks = append(checks, alphaDoctorChecks(ctx, cfg, configPath)...)
 	for _, check := range checks {
 		fmt.Printf("%s %s: %s\n", check.Status, check.Name, redaction.Redact(check.Message))
 	}
@@ -647,6 +648,63 @@ func doctorCommand(args []string) error {
 	}
 	fmt.Printf("PASS storage database: %s\n", redaction.Redact(filepath.Join(cfg.Storage.StateDir, cfg.Storage.DatabaseFile)))
 	return nil
+}
+
+func alphaDoctorChecks(ctx context.Context, cfg config.Config, configPath string) []storage.DoctorCheck {
+	var checks []storage.DoctorCheck
+	add := func(name string, status storage.DoctorStatus, message string) {
+		checks = append(checks, storage.DoctorCheck{Name: name, Status: status, Message: message})
+	}
+	if err := ctx.Err(); err != nil {
+		add("context", storage.DoctorFail, err.Error())
+		return checks
+	}
+	add("config validation", storage.DoctorPass, "configuration loaded and validated")
+	if server, err := api.NewServer(apiOptionsFromConfig(cfg, nil, nil)); err != nil {
+		add("api configuration", storage.DoctorFail, err.Error())
+	} else {
+		_ = server
+		add("api configuration", storage.DoctorPass, "api configuration is valid")
+	}
+	if _, err := rules.FromConfig(cfg); err != nil {
+		add("rules configuration", storage.DoctorFail, err.Error())
+	} else {
+		add("rules configuration", storage.DoctorPass, fmt.Sprintf("%d rules configured", len(cfg.Rules)))
+	}
+	if _, err := notify.OptionsFromConfig(cfg, os.LookupEnv); err != nil {
+		add("notification configuration", storage.DoctorFail, err.Error())
+	} else {
+		add("notification configuration", storage.DoctorPass, fmt.Sprintf("enabled=%t dry_run=%t receivers=%d", cfg.Notify.Enabled, cfg.Notify.DryRun, len(cfg.Notify.Receivers)))
+	}
+	add("scheduler configuration", storage.DoctorPass, fmt.Sprintf("enabled=%t interval=%s", cfg.Agent.Scheduler.Enabled, cfg.Agent.Scheduler.Interval.Duration))
+	if os.Getenv("NOTIFY_SOCKET") == "" {
+		add("systemd notify environment", storage.DoctorWarn, "NOTIFY_SOCKET is not set; systemd readiness will be a no-op outside systemd")
+	} else {
+		client := systemdnotify.NewFromEnv(os.Getenv)
+		if client.Socket == "" {
+			add("systemd notify environment", storage.DoctorWarn, "systemd notify socket is unavailable")
+		} else {
+			add("systemd notify environment", storage.DoctorPass, "systemd notify socket is configured")
+		}
+	}
+	if exe, err := os.Executable(); err != nil {
+		add("executable path", storage.DoctorWarn, err.Error())
+	} else {
+		add("executable path", storage.DoctorPass, exe)
+	}
+	if info, err := os.Stat(configPath); err != nil {
+		add("config permissions", storage.DoctorWarn, err.Error())
+	} else {
+		mode := info.Mode().Perm()
+		if mode&0o022 != 0 {
+			add("config permissions", storage.DoctorWarn, fmt.Sprintf("config mode %04o is writable by group or others", mode))
+		} else if mode&0o004 != 0 {
+			add("config permissions", storage.DoctorWarn, fmt.Sprintf("config mode %04o is world-readable; installed configs should normally be 0640", mode))
+		} else {
+			add("config permissions", storage.DoctorPass, fmt.Sprintf("config mode %04o", mode))
+		}
+	}
+	return checks
 }
 
 func collectorsCommand(args []string) error {

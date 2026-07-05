@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Step 9 adds a disabled-by-default production monitoring scheduler and agent collection/evaluation loop on top of the Step 8 localhost API, report preview, and systemd readiness wiring.
+Step 10 adds alpha hardening, install/service integration, release checks, and local end-to-end dry-run validation on top of the Step 9 disabled-by-default scheduler.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -21,10 +21,10 @@ Step 9 adds a disabled-by-default production monitoring scheduler and agent coll
 - Local report preview summarizes existing storage only
 - `pooly-agent run` opens storage, optionally starts the localhost API and scheduler, sends truthful systemd readiness, and handles graceful shutdown
 - Scheduler status and dry-run one-shot cycle commands are available
-- Install and uninstall scripts remain stubs only
-- The scheduler is disabled by default; report delivery, remediation, updating, public API exposure, and dashboards are not implemented yet
+- Hardened install/uninstall helpers, release checks, secret scanning, and local dry-run validation are available
+- The scheduler is disabled by default; report delivery, remediation, updating, public API exposure, and dashboards are not implemented
 
-The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, scheduler status/run-once diagnostics, and run lifecycle wiring. `run` starts scheduled collection only when `agent.scheduler.enabled` is explicitly true.
+The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, scheduler status/run-once diagnostics, doctor checks, and run lifecycle wiring. `run` starts scheduled collection only when `agent.scheduler.enabled` is explicitly true.
 
 ## Safety Rules
 
@@ -86,4 +86,17 @@ go test -race ./...
 go build ./cmd/pooly-agent
 ```
 
-Release work will add broader checks, including race tests, coverage, vulnerability scanning, parser fixtures, and redaction tests.
+Alpha release checks:
+
+```bash
+scripts/check-release.sh
+scripts/local-dry-run.sh --binary ./pooly-agent
+scripts/scan-secrets.sh
+```
+
+Install preview:
+
+```bash
+scripts/install.sh --dry-run
+scripts/uninstall.sh --dry-run
+```

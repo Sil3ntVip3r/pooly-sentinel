@@ -57,6 +57,9 @@ func TestAPIAndReportsCLI(t *testing.T) {
 	if err := runCLI([]string{"reports", "preview", "--config", configPath, "--json"}); err != nil {
 		t.Fatalf("reports preview error = %v", err)
 	}
+	if err := runCLI([]string{"doctor", "--config", configPath}); err != nil {
+		t.Fatalf("doctor error = %v", err)
+	}
 }
 
 func TestSchedulerCLIStatusAndDryRun(t *testing.T) {

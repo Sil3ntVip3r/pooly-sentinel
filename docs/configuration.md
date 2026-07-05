@@ -33,6 +33,7 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - Rule evaluation owns WARN/FAIL/CRITICAL decisions. Collectors still emit facts only.
 - Incident lifecycle persistence is local-only. Task 7 adds single-cycle notification delivery. Step 8 adds read-only localhost API, local report preview, and systemd readiness/watchdog wiring. Step 9 adds the disabled-by-default scheduler and run loop; remediation, report delivery, public API, updater behavior, and dashboards are not implemented.
 - Notification delivery is disabled and dry-run by default. Webhook destinations are referenced by environment variable name, not raw URL.
+- Alpha install keeps scheduler disabled by default and installs configs as `0640`; secret environment files should be `0600`.
 
 ## Rules
 
@@ -67,5 +68,7 @@ Step 8 and Step 9 use:
 The API is read-only and returns JSON. Reports are previews generated from existing storage only. The scheduler runs collection/evaluation/notification cycles only when explicitly enabled. systemd readiness is sent only after config, logging, storage, the enabled API, and the enabled scheduler are initialized.
 
 See `docs/scheduler.md` for scheduler behavior and dry-run diagnostics.
+
+For alpha install and rollback, see `docs/alpha-install.md`, `docs/alpha-uninstall.md`, and `docs/local-dry-run.md`.
 
 See `docs/config.example.yaml`.

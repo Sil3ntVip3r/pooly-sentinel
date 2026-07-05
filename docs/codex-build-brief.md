@@ -54,4 +54,6 @@ Step 8 implements read-only localhost API endpoints, local report preview from e
 
 Step 9 implements the disabled-by-default production monitoring scheduler and agent run loop. The scheduler orchestrates existing collectors, rule evaluation, incident lifecycle updates, notification delivery for incident transitions, and safe scheduler status persistence.
 
-Report delivery, remediation, updating, public API serving, dashboards, new collectors, and new notification receivers remain intentionally unimplemented.
+Step 10 implements alpha hardening and release readiness: hardened install/uninstall helpers, alpha systemd service finalization, release-check and local dry-run scripts, secret-pattern scanning, doctor enhancements, and install/rollback/security documentation.
+
+Report delivery, remediation, updating, public API serving, dashboards, new collectors, new notification receivers, remote fleet hub, and Pooly Server Guard modifications remain intentionally unimplemented.

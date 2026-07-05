@@ -7,6 +7,7 @@ After=network-online.target
 [Service]
 Type=notify
 NotifyAccess=main
+UMask=0027
 
 ExecStartPre=/usr/local/bin/pooly-agent check config --config /etc/pooly-sentinel/config.yaml
 ExecStart=/usr/local/bin/pooly-agent run --config /etc/pooly-sentinel/config.yaml

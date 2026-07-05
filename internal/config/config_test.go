@@ -75,6 +75,32 @@ func TestExampleConfigLoads(t *testing.T) {
 	}
 }
 
+func TestExampleConfigSafetyDefaults(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "config.example.yaml")
+	cfg, err := LoadFile(context.Background(), path)
+	if err != nil {
+		t.Fatalf("example config should load: %v", err)
+	}
+	if cfg.Agent.Scheduler.Enabled {
+		t.Fatal("example config enables scheduler")
+	}
+	if cfg.API.Enabled || cfg.API.AllowNonLoopback {
+		t.Fatalf("example API defaults are unsafe: %+v", cfg.API)
+	}
+	if cfg.Notification.PaidReceiversEnabledByDefault {
+		t.Fatal("example enables paid receivers by default")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read example config: %v", err)
+	}
+	for _, forbidden := range []string{"discord.com/api/webhooks", "Authorization: Bearer", "-----BEGIN", "PRIVATE KEY-----"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("example config contains forbidden literal %q", forbidden)
+		}
+	}
+}
+
 func TestLoadBytesRejectsUnknownFields(t *testing.T) {
 	input := validConfigYAML + "\nunknown_field: true\n"
 	_, err := LoadBytes(context.Background(), []byte(input))

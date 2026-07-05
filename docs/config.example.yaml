@@ -24,6 +24,8 @@ reports:
 
 agent:
   scheduler:
+    # Alpha default is install-only/no background monitoring.
+    # Set enabled: true only after validating storage paths, rules, and notification dry-run behavior.
     enabled: false
     interval: 60s
     run_on_start: false
@@ -327,6 +329,7 @@ notify:
       display_name: "Local webhook"
       enabled: false
       type: webhook
+      # Environment variable name only. Do not put webhook URLs or tokens in YAML.
       url_env: POOLY_WEBHOOK_URL
       timeout: 5s
       events:
