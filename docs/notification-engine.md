@@ -1,29 +1,23 @@
 # Notification Engine
 
-The notification manager will receive incident candidates from the incident engine. Collectors do not notify directly.
+Task 7 implements single-cycle notification delivery for incident lifecycle events. Collectors still do not notify directly.
 
-## Responsibilities
+Implemented responsibilities:
 
-- routing
-- grouping
-- dedupe
-- silences
-- inhibition
-- timing
-- rate limiting
-- delivery
-- retry
-- history
+- route by enabled receiver, event filter, and severity filter
+- render safe payloads from allowlisted incident fields
+- deduplicate repeated successful deliveries for the same lifecycle event
+- persist delivery attempts
+- update incident `last_alerted` only after successful delivery
+- support dry-run and diagnostic CLI commands
 
-## Cost Classes
+Deferred responsibilities:
 
-- `free_core`: local files, JSONL events, local reports
-- `free_self_hosted`: Gotify, ntfy, future Pooly Hub
-- `free_external`: Discord webhooks
-- `paid_external`: Pushover, Twilio SMS, AWS SNS SMS
+- production scheduling
+- grouping policies
+- silence windows
+- inhibition graphs
+- report delivery
+- provider-specific Discord, email, SMS, or paid receivers
 
-Paid receivers must be disabled by default and must not be required for install, alpha operation, or normal monitoring.
-
-## Receiver Placeholders
-
-Task 1 includes receiver package placeholders only. No receiver sends notifications yet.
+Paid receivers remain disabled by default and are not required for install, alpha operation, or normal monitoring.

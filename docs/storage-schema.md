@@ -27,8 +27,8 @@ Schema ownership lives in versioned Go migration definitions under `internal/sto
 
 `notification_deliveries`
 
-- stores delivery attempts for future notification history
-- Task 3 does not send notifications
+- stores Task 7 delivery attempts
+- records receiver, status, attempt, attempted time, delivered time, and redacted error details
 
 `rollup_metadata`
 

@@ -120,6 +120,22 @@ func Default() Config {
 			ManageRules: false,
 		},
 		Rules: defaultRules(),
+		Notify: NotifyConfig{
+			Enabled: false,
+			DryRun:  true,
+			Receivers: []NotifyReceiverConfig{
+				{
+					ID:          "local-webhook",
+					DisplayName: "Local webhook",
+					Enabled:     false,
+					Type:        "webhook",
+					URLEnv:      "POOLY_WEBHOOK_URL",
+					Timeout:     Duration{Duration: 5 * time.Second},
+					Events:      []string{"opened", "escalated", "resolved"},
+					Severities:  []string{"warning", "failure", "critical"},
+				},
+			},
+		},
 		Notification: NotificationConfig{
 			PaidReceiversEnabledByDefault: false,
 		},

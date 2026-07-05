@@ -24,4 +24,6 @@ Initial migration sequence:
 
 Migration 6 adds incident fingerprints, incident last-transition time, and `rule_evaluation_state`. It is additive and does not delete collector state, incident history, or notification-delivery history.
 
+Task 7 uses the existing `notification_deliveries` schema and incident `last_alerted` field. No migration is required.
+
 Task 3 includes tests for fresh migration, reopening an existing database, ordering, rollback on failure, future schema detection, and repeated initialization. Task 6 adds repository coverage for rule evaluation state and fingerprint lookup.

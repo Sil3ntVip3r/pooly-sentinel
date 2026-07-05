@@ -28,10 +28,15 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - filewatch targets must be explicit absolute paths with type `file`, `directory`, or `any`; bounded file hashing uses no-follow descriptor reads and directory manifests expose truncation instead of silently replacing baselines.
 - Rules are typed YAML entries evaluated against collector observations only. They may define warning, failure, and critical thresholds plus sustained and recovery durations.
 - Rule evaluation owns WARN/FAIL/CRITICAL decisions. Collectors still emit facts only.
-- Incident lifecycle persistence is local-only. Notification delivery, production scheduling, remediation, API serving, and systemd readiness are not implemented in Task 6.
+- Incident lifecycle persistence is local-only. Task 7 adds single-cycle notification delivery, but production scheduling, remediation, API serving, and systemd readiness are not implemented.
+- Notification delivery is disabled and dry-run by default. Webhook destinations are referenced by environment variable name, not raw URL.
 
 ## Rules
 
 Each rule has a stable `id`, `collector`, `metric` or `event_category`, optional `target`, threshold blocks, `recover_for`, and explicit missing/stale-data policies. Supported threshold operators are numeric comparison, equality/inequality, boolean true/false, state match, and event-category match. The configuration rejects duplicate IDs, unknown operators, unsafe targets, unsupported metric-name shapes, secret-bearing text, excessive summaries, and excessive rule counts.
+
+## Notifications
+
+Task 7 notification delivery uses `notify.enabled`, `notify.dry_run`, and `notify.receivers`. Receiver destinations are referenced through environment variable names such as `POOLY_WEBHOOK_URL`. Enabled webhook receivers require `url_env`; raw URLs are intentionally absent from the example configuration. Dry-run mode renders safe delivery results without contacting receivers or updating `last_alerted`.
 
 See `docs/config.example.yaml`.

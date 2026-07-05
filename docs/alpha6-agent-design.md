@@ -1,6 +1,6 @@
 # Agent Design
 
-This file reserves high-level agent design notes requested by the build brief. The repository now includes the core foundation, storage foundation, one-shot collectors, rule evaluation, and local incident lifecycle persistence. Production scheduling, notification delivery, API serving, systemd readiness, reporting, and remediation remain future work.
+This file reserves high-level agent design notes requested by the build brief. The repository now includes the core foundation, storage foundation, one-shot collectors, rule evaluation, local incident lifecycle persistence, and single-cycle notification delivery. Production scheduling, API serving, systemd readiness, reporting, and remediation remain future work.
 
 ## Responsibilities
 

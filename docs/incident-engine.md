@@ -9,7 +9,7 @@ The incident engine does not evaluate collector thresholds. It receives sustaine
 - Collectors own factual observations.
 - The rule engine owns WARN/FAIL/CRITICAL rule-result severity.
 - The incident engine owns open, update, escalate, resolve, and reopen lifecycle state.
-- Notification delivery remains a future task.
+- Task 7 notification delivery consumes incident lifecycle state but does not change incident ownership.
 
 ## Deduplication
 

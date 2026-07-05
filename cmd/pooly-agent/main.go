@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/filewatch"
@@ -17,6 +18,7 @@ import (
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/systemd"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/config"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/logging"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/notify"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/rules"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
@@ -55,9 +57,168 @@ func runCLI(args []string) error {
 		return rulesCommand(args[1:])
 	case "incidents":
 		return incidentsCommand(args[1:])
+	case "notifications":
+		return notificationsCommand(args[1:])
 	default:
 		return fmt.Errorf("unknown pooly-agent command %q", args[0])
 	}
+}
+
+func notificationsCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: pooly-agent notifications <validate|test|send|deliveries> --config <path>")
+	}
+	switch args[0] {
+	case "validate":
+		configPath, err := parseConfigFlag(args[1:])
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cfg, err := config.LoadFile(ctx, configPath)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("notifications OK: enabled=%t dry_run=%t receivers=%d\n", cfg.Notify.Enabled, cfg.Notify.DryRun, len(cfg.Notify.Receivers))
+		return nil
+	case "test":
+		return notificationsTestCommand(args[1:])
+	case "send":
+		return notificationsSendCommand(args[1:])
+	case "deliveries":
+		return notificationsDeliveriesCommand(args[1:])
+	default:
+		return fmt.Errorf("unknown notifications command %q", args[0])
+	}
+}
+
+func notificationsTestCommand(args []string) error {
+	configPath, receiverID, jsonOutput, send, err := parseNotificationsTestFlags(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	dryRun := !send
+	service, err := notificationServiceFromConfig(cfg, nil, receiverID, dryRun, true)
+	if err != nil {
+		return err
+	}
+	incident := notificationPreviewIncident()
+	if dryRun {
+		report, err := service.DeliverIncident(ctx, incident, notify.EventOpened)
+		if err != nil {
+			return err
+		}
+		return printNotificationReport(report, jsonOutput)
+	}
+	payload := notify.RenderPayload(incident, notify.EventOpened)
+	var report notify.Report
+	for _, receiver := range service.Receivers {
+		outcome := receiver.Deliver(ctx, payload)
+		result := notify.DeliveryResult{IncidentID: incident.ID, ReceiverID: receiver.ID(), Event: notify.EventOpened}
+		if outcome.Success {
+			result.Status = notify.StatusDelivered
+			result.Summary = redaction.Redact(outcome.Summary)
+		} else {
+			result.Status = notify.StatusFailed
+			result.ErrorClass = redaction.Redact(outcome.ErrorClass)
+			result.Summary = redaction.Redact(outcome.Summary)
+		}
+		report.Results = append(report.Results, result)
+		if result.Status == notify.StatusDelivered {
+			report.Delivered++
+		} else {
+			report.Failed++
+		}
+	}
+	if err := printNotificationReport(report, jsonOutput); err != nil {
+		return err
+	}
+	if notify.Failed(report) {
+		return notify.ErrDeliveryFailed
+	}
+	return nil
+}
+
+func notificationsSendCommand(args []string) error {
+	configPath, incidentID, jsonOutput, dryRun, err := parseNotificationsSendFlags(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	store, err := openConfiguredStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	incident, err := store.GetIncident(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	effectiveDryRun := dryRun || cfg.Notify.DryRun
+	service, err := notificationServiceFromConfig(cfg, store, "", effectiveDryRun, false)
+	if err != nil {
+		return err
+	}
+	report, err := service.DeliverIncident(ctx, incident, notify.EventFromIncident(incident))
+	if err != nil {
+		return err
+	}
+	if err := printNotificationReport(report, jsonOutput); err != nil {
+		return err
+	}
+	if notify.Failed(report) {
+		return notify.ErrDeliveryFailed
+	}
+	return nil
+}
+
+func notificationsDeliveriesCommand(args []string) error {
+	configPath, incidentID, err := parseNotificationsDeliveriesFlags(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	store, err := openConfiguredStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	deliveries, err := store.ListNotificationDeliveries(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	if len(deliveries) == 0 {
+		fmt.Println("no notification deliveries recorded")
+		return nil
+	}
+	for _, delivery := range deliveries {
+		deliveredAt := ""
+		if delivery.DeliveredAt != nil {
+			deliveredAt = delivery.DeliveredAt.Format("2006-01-02T15:04:05Z07:00")
+		}
+		fmt.Printf("%s receiver=%s status=%s attempt=%d attempted=%s delivered=%s error=%s summary=%s\n",
+			delivery.ID, delivery.Receiver, delivery.Status, delivery.Attempt,
+			delivery.AttemptedAt.Format("2006-01-02T15:04:05Z07:00"), deliveredAt,
+			redaction.Redact(delivery.ErrorClass), redaction.Redact(delivery.ErrorSummary))
+	}
+	return nil
 }
 
 func rulesCommand(args []string) error {
@@ -484,6 +645,170 @@ func filewatchOptionsFromConfig(cfg config.Config, persist bool, store *storage.
 	return opts
 }
 
+func notificationServiceFromConfig(cfg config.Config, store notify.Store, receiverID string, dryRunOverride bool, allowDisabled bool) (notify.Service, error) {
+	cfg.Notify.DryRun = dryRunOverride
+	opts, err := notify.OptionsFromConfig(cfg, os.LookupEnv)
+	if err != nil {
+		return notify.Service{}, err
+	}
+	filtered := opts.Receivers[:0]
+	for _, receiver := range opts.Receivers {
+		if receiverID != "" && receiver.ID != receiverID {
+			continue
+		}
+		if allowDisabled && opts.DryRun && receiverID != "" {
+			receiver.Enabled = true
+		}
+		filtered = append(filtered, receiver)
+	}
+	if receiverID != "" && len(filtered) == 0 {
+		return notify.Service{}, fmt.Errorf("notification receiver %q was not found", receiverID)
+	}
+	opts.Receivers = filtered
+	receivers, err := notify.BuildReceivers(opts.Receivers)
+	if err != nil {
+		return notify.Service{}, err
+	}
+	return notify.NewService(opts, store, receivers), nil
+}
+
+func notificationPreviewIncident() storage.IncidentRecord {
+	return storage.IncidentRecord{
+		ID:              "preview-notification",
+		Fingerprint:     "preview:notification:diagnostic:opened",
+		NodeID:          "preview-node",
+		Type:            "diagnostic",
+		Target:          "notification-test",
+		Condition:       "manual-test",
+		Severity:        "warning",
+		Status:          "open",
+		Summary:         "safe notification test payload",
+		FirstSeen:       fixedPreviewTime(),
+		LastSeen:        fixedPreviewTime(),
+		OccurrenceCount: 1,
+		LastTransition:  ptrTime(fixedPreviewTime()),
+	}
+}
+
+func fixedPreviewTime() time.Time {
+	return time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
+}
+
+func printNotificationReport(report notify.Report, jsonOutput bool) error {
+	if jsonOutput {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	for _, result := range report.Results {
+		fmt.Printf("%s receiver=%s event=%s status=%s attempt=%d summary=%s\n",
+			result.IncidentID, result.ReceiverID, result.Event, result.Status, result.Attempt, redaction.Redact(result.Summary))
+	}
+	fmt.Printf("notification results: delivered=%d failed=%d skipped=%d dry_run=%d\n", report.Delivered, report.Failed, report.Skipped, report.DryRun)
+	return nil
+}
+
+func parseNotificationsTestFlags(args []string) (configPath string, receiverID string, jsonOutput bool, send bool, err error) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--config":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", false, false, fmt.Errorf("--config requires a path")
+			}
+			configPath = args[i+1]
+			i++
+		case "--receiver":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", false, false, fmt.Errorf("--receiver requires an id")
+			}
+			receiverID = args[i+1]
+			i++
+		case "--json":
+			jsonOutput = true
+		case "--send":
+			send = true
+		case "--dry-run":
+			send = false
+		default:
+			return "", "", false, false, fmt.Errorf("unknown argument %q", args[i])
+		}
+	}
+	if configPath == "" {
+		return "", "", false, false, fmt.Errorf("--config <path> is required")
+	}
+	if receiverID == "" {
+		return "", "", false, false, fmt.Errorf("--receiver <id> is required")
+	}
+	return configPath, receiverID, jsonOutput, send, nil
+}
+
+func parseNotificationsSendFlags(args []string) (configPath string, incidentID string, jsonOutput bool, dryRun bool, err error) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--config":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", false, false, fmt.Errorf("--config requires a path")
+			}
+			configPath = args[i+1]
+			i++
+		case "--incident":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", false, false, fmt.Errorf("--incident requires an id")
+			}
+			incidentID = args[i+1]
+			i++
+		case "--json":
+			jsonOutput = true
+		case "--dry-run":
+			dryRun = true
+		default:
+			return "", "", false, false, fmt.Errorf("unknown argument %q", args[i])
+		}
+	}
+	if configPath == "" {
+		return "", "", false, false, fmt.Errorf("--config <path> is required")
+	}
+	if incidentID == "" {
+		return "", "", false, false, fmt.Errorf("--incident <id> is required")
+	}
+	return configPath, incidentID, jsonOutput, dryRun, nil
+}
+
+func parseNotificationsDeliveriesFlags(args []string) (configPath string, incidentID string, err error) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--config":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", fmt.Errorf("--config requires a path")
+			}
+			configPath = args[i+1]
+			i++
+		case "--incident":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", "", fmt.Errorf("--incident requires an id")
+			}
+			incidentID = args[i+1]
+			i++
+		default:
+			return "", "", fmt.Errorf("unknown argument %q", args[i])
+		}
+	}
+	if configPath == "" {
+		return "", "", fmt.Errorf("--config <path> is required")
+	}
+	if incidentID == "" {
+		return "", "", fmt.Errorf("--incident <id> is required")
+	}
+	return configPath, incidentID, nil
+}
+
 func parseCollectorRunFlags(args []string) (configPath string, jsonOutput bool, persist bool, err error) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -691,10 +1016,14 @@ Usage:
   pooly-agent rules test --config <path> --fixture <path> [--json] [--persist|--dry-run]
   pooly-agent incidents list --config <path>
   pooly-agent incidents show --config <path> --id <id>
+  pooly-agent notifications validate --config <path>
+  pooly-agent notifications test --config <path> --receiver <id> [--json] [--dry-run|--send]
+  pooly-agent notifications send --config <path> --incident <id> [--json] [--dry-run]
+  pooly-agent notifications deliveries --config <path> --incident <id>
 
 Task status:
   Core foundation, storage foundation, one-shot Linux collectors, rule evaluation,
-  and incident lifecycle persistence are present.
-  Production monitoring, notification delivery, remediation, and scheduling are not implemented.
+  incident lifecycle persistence, and single-cycle notification delivery are present.
+  Production monitoring, remediation, and scheduling are not implemented.
 `)
 }

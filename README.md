@@ -16,10 +16,11 @@ Task 6 rule evaluation and local incident lifecycle persistence are implemented.
 - Linux systemd, journald, SSH, and file-state collectors emit typed factual observations and safe events
 - Rule evaluation consumes typed observations and supports pending, sustained, critical, and recovery states
 - Incident lifecycle persistence deduplicates, escalates, resolves, and reopens local incident records by stable fingerprint
+- Single-cycle notification delivery can render safe payloads, send configured webhooks, persist attempts, and update `last_alerted` after success
 - Install and uninstall scripts remain stubs only
-- Production monitoring loops, notification delivery, reporting, API serving, remediation, updating, and dashboards are not implemented yet
+- Production monitoring loops, reporting, API serving, remediation, updating, and dashboards are not implemented yet
 
-The current `pooly-agent` entrypoint supports safe placeholder commands, one-shot manual collector runs, rule validation, fixture-based rule tests, and local incident inspection. `run` loads configuration and logging, then waits without starting production monitoring.
+The current `pooly-agent` entrypoint supports safe placeholder commands, one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, and notification diagnostics. `run` loads configuration and logging, then waits without starting production monitoring.
 
 ## Safety Rules
 
@@ -46,7 +47,7 @@ collector
 
 Collectors will never send notifications directly or create incidents directly.
 
-Rule evaluation owns WARN/FAIL/CRITICAL decisions. The incident engine owns local lifecycle state. Notification delivery remains future work.
+Rule evaluation owns WARN/FAIL/CRITICAL decisions. The incident engine owns local lifecycle state. The notification engine owns delivery decisions and delivery records.
 
 ## Repository Layout
 

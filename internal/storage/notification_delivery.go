@@ -3,9 +3,14 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 )
+
+type notificationDeliveryExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
 
 func (s *Store) InsertNotificationDelivery(ctx context.Context, record NotificationDeliveryRecord) error {
 	if err := validateNotificationDelivery(record); err != nil {
@@ -15,7 +20,11 @@ func (s *Store) InsertNotificationDelivery(ctx context.Context, record Notificat
 	if err != nil {
 		return err
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO notification_deliveries(
+	return insertNotificationDelivery(ctx, db, record)
+}
+
+func insertNotificationDelivery(ctx context.Context, execer notificationDeliveryExecutor, record NotificationDeliveryRecord) error {
+	_, err := execer.ExecContext(ctx, `INSERT INTO notification_deliveries(
 			id, incident_id, receiver, cost_class, status, attempt, attempted_at,
 			delivered_at, error_class, error_summary
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -32,6 +41,33 @@ func (s *Store) InsertNotificationDelivery(ctx context.Context, record Notificat
 	)
 	if err != nil {
 		return wrapError("insert notification delivery", ErrorClassWrite, err)
+	}
+	return nil
+}
+
+func (s *Store) UpdateIncidentLastAlerted(ctx context.Context, incidentID string, alertedAt time.Time) error {
+	if err := required(incidentID, "incident id"); err != nil {
+		return wrapError("update incident last_alerted", ErrorClassValidation, err)
+	}
+	if err := requiredTime("last_alerted", alertedAt); err != nil {
+		return wrapError("update incident last_alerted", ErrorClassValidation, err)
+	}
+	db, err := s.database()
+	if err != nil {
+		return err
+	}
+	return updateIncidentLastAlerted(ctx, db, incidentID, alertedAt)
+}
+
+func updateIncidentLastAlerted(ctx context.Context, execer notificationDeliveryExecutor, incidentID string, alertedAt time.Time) error {
+	result, err := execer.ExecContext(ctx, `UPDATE incidents SET last_alerted = ?, updated_at = ? WHERE id = ?`,
+		formatTime(alertedAt), formatTime(nowUTC()), incidentID)
+	if err != nil {
+		return wrapError("update incident last_alerted", ErrorClassWrite, err)
+	}
+	rows, err := result.RowsAffected()
+	if err == nil && rows == 0 {
+		return notFound("update incident last_alerted")
 	}
 	return nil
 }

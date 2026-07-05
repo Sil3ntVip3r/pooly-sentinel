@@ -210,6 +210,7 @@ func (c Config) Validate() error {
 		errs.add("audit.manage_rules", "must be false during alpha")
 	}
 	validateRules(&errs, c.Rules)
+	validateNotify(&errs, c.Notify)
 	if c.Notification.PaidReceiversEnabledByDefault {
 		errs.add("notification.paid_receivers_enabled_by_default", "must be false")
 	}
@@ -225,6 +226,78 @@ func (c Config) Validate() error {
 		return errs
 	}
 	return nil
+}
+
+func validateNotify(errs *ValidationErrors, cfg NotifyConfig) {
+	if len(cfg.Receivers) > 32 {
+		errs.add("notify.receivers", "must contain no more than 32 entries")
+	}
+	seen := map[string]struct{}{}
+	for i, receiver := range cfg.Receivers {
+		prefix := fmt.Sprintf("notify.receivers[%d]", i)
+		requireString(errs, prefix+".id", receiver.ID)
+		requireString(errs, prefix+".type", receiver.Type)
+		validateNoSecretLiteral(errs, prefix+".id", receiver.ID)
+		validateNoSecretLiteral(errs, prefix+".display_name", receiver.DisplayName)
+		if receiver.ID != "" {
+			if !safeIdentifierPattern.MatchString(receiver.ID) {
+				errs.add(prefix+".id", "must contain only letters, numbers, dot, underscore, or dash")
+			}
+			if _, ok := seen[receiver.ID]; ok {
+				errs.add(prefix+".id", "duplicates another notification receiver id")
+			}
+			seen[receiver.ID] = struct{}{}
+		}
+		if len(receiver.DisplayName) > 80 {
+			errs.add(prefix+".display_name", "must be 80 bytes or shorter")
+		}
+		validateOneOf(errs, prefix+".type", receiver.Type, "webhook", "noop")
+		validateNotifyTimeout(errs, prefix+".timeout", receiver.Timeout.Duration)
+		validateEnvField(errs, prefix+".url_env", receiver.URLEnv)
+		if receiver.Type == "webhook" && receiver.Enabled && receiver.URLEnv == "" {
+			errs.add(prefix+".url_env", "is required when an enabled webhook receiver is configured")
+		}
+		validateNotifyEvents(errs, prefix+".events", receiver.Events)
+		validateNotifySeverities(errs, prefix+".severities", receiver.Severities)
+	}
+}
+
+func validateNotifyTimeout(errs *ValidationErrors, field string, d time.Duration) {
+	if d <= 0 {
+		errs.add(field, "must be greater than zero")
+		return
+	}
+	if d > 30*time.Second {
+		errs.add(field, "must be 30s or less")
+	}
+}
+
+func validateNotifyEvents(errs *ValidationErrors, field string, events []string) {
+	validateStringListLimit(errs, field, events, 16)
+	seen := map[string]struct{}{}
+	for i, event := range events {
+		item := fmt.Sprintf("%s[%d]", field, i)
+		validateOneOf(errs, item, event, "opened", "escalated", "resolved", "reopened")
+		validateNoSecretLiteral(errs, item, event)
+		if _, ok := seen[event]; ok {
+			errs.add(item, "duplicates another event filter")
+		}
+		seen[event] = struct{}{}
+	}
+}
+
+func validateNotifySeverities(errs *ValidationErrors, field string, severities []string) {
+	validateStringListLimit(errs, field, severities, 16)
+	seen := map[string]struct{}{}
+	for i, severity := range severities {
+		item := fmt.Sprintf("%s[%d]", field, i)
+		validateOneOf(errs, item, severity, "warning", "failure", "critical", "none")
+		validateNoSecretLiteral(errs, item, severity)
+		if _, ok := seen[severity]; ok {
+			errs.add(item, "duplicates another severity filter")
+		}
+		seen[severity] = struct{}{}
+	}
 }
 
 func validateRules(errs *ValidationErrors, rules []RuleConfig) {

@@ -11,6 +11,6 @@ Rule state transitions drive incident lifecycle changes:
 - `RECOVERING` to `RECOVERED`: resolve the incident
 - `RECOVERED` to `OK`: clear rule state after recovery persistence
 
-`last_alerted` is reserved for the notification task and is not modified by delivery logic in Task 6.
+`last_alerted` is updated by Task 7 notification delivery only after at least one receiver succeeds for a lifecycle event.
 
 Open incidents are never silently deleted.

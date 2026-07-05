@@ -309,6 +309,83 @@ func TestRuleEvaluationTransactionRollback(t *testing.T) {
 	}
 }
 
+func TestNotificationDeliveryTransactionUpdatesLastAlertedAndRollsBack(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "state.db"))
+	defer store.Close()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	incident := IncidentRecord{
+		ID:              "inc-notify",
+		Fingerprint:     "node:rule:system:condition",
+		NodeID:          "node",
+		Type:            "rule",
+		Target:          "system",
+		Condition:       "condition",
+		Severity:        "warning",
+		Status:          "open",
+		Summary:         "summary",
+		FirstSeen:       now,
+		LastSeen:        now,
+		OccurrenceCount: 1,
+	}
+	if err := store.UpsertIncident(ctx, incident); err != nil {
+		t.Fatalf("UpsertIncident() error = %v", err)
+	}
+	alertedAt := now.Add(time.Minute)
+	err := store.NotificationDeliveryTransaction(ctx, func(tx NotificationDeliveryTransaction) error {
+		if err := tx.InsertNotificationDelivery(ctx, NotificationDeliveryRecord{
+			ID:          "delivered-1",
+			IncidentID:  incident.ID,
+			Receiver:    "web",
+			CostClass:   "free_external",
+			Status:      "delivered",
+			Attempt:     1,
+			AttemptedAt: alertedAt,
+			DeliveredAt: &alertedAt,
+		}); err != nil {
+			return err
+		}
+		return tx.UpdateIncidentLastAlerted(ctx, incident.ID, alertedAt)
+	})
+	if err != nil {
+		t.Fatalf("NotificationDeliveryTransaction() error = %v", err)
+	}
+	got, err := store.GetIncident(ctx, incident.ID)
+	if err != nil {
+		t.Fatalf("GetIncident() error = %v", err)
+	}
+	if got.LastAlerted == nil || !got.LastAlerted.Equal(alertedAt) {
+		t.Fatalf("LastAlerted = %v, want %v", got.LastAlerted, alertedAt)
+	}
+	err = store.NotificationDeliveryTransaction(ctx, func(tx NotificationDeliveryTransaction) error {
+		if err := tx.InsertNotificationDelivery(ctx, NotificationDeliveryRecord{
+			ID:          "rolled-back",
+			IncidentID:  incident.ID,
+			Receiver:    "web",
+			CostClass:   "free_external",
+			Status:      "delivered",
+			Attempt:     2,
+			AttemptedAt: alertedAt,
+			DeliveredAt: &alertedAt,
+		}); err != nil {
+			return err
+		}
+		return errors.New("force rollback")
+	})
+	if err == nil {
+		t.Fatal("NotificationDeliveryTransaction() rollback error = nil")
+	}
+	deliveries, err := store.ListNotificationDeliveries(ctx, incident.ID)
+	if err != nil {
+		t.Fatalf("ListNotificationDeliveries() error = %v", err)
+	}
+	for _, delivery := range deliveries {
+		if delivery.ID == "rolled-back" {
+			t.Fatalf("rolled back delivery persisted: %+v", deliveries)
+		}
+	}
+}
+
 func TestContextCancellationAndCloseBehavior(t *testing.T) {
 	store := openTestStore(t, filepath.Join(t.TempDir(), "state.db"))
 	ctx, cancel := context.WithCancel(context.Background())

@@ -299,6 +299,25 @@ rules:
 notification:
   paid_receivers_enabled_by_default: false
 
+notify:
+  enabled: false
+  dry_run: true
+  receivers:
+    - id: local-webhook
+      display_name: "Local webhook"
+      enabled: false
+      type: webhook
+      url_env: POOLY_WEBHOOK_URL
+      timeout: 5s
+      events:
+        - opened
+        - escalated
+        - resolved
+      severities:
+        - warning
+        - failure
+        - critical
+
 receivers:
   - name: local_file
     type: file

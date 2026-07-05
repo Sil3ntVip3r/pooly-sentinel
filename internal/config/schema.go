@@ -20,6 +20,7 @@ type Config struct {
 	Filewatch    FilewatchConfig    `yaml:"filewatch"`
 	Audit        AuditConfig        `yaml:"audit"`
 	Rules        []RuleConfig       `yaml:"rules"`
+	Notify       NotifyConfig       `yaml:"notify"`
 	Notification NotificationConfig `yaml:"notification"`
 	Receivers    []ReceiverConfig   `yaml:"receivers"`
 	Storage      StorageConfig      `yaml:"storage"`
@@ -194,6 +195,24 @@ type RuleThresholdConfig struct {
 
 type NotificationConfig struct {
 	PaidReceiversEnabledByDefault bool `yaml:"paid_receivers_enabled_by_default"`
+}
+
+type NotifyConfig struct {
+	Enabled   bool                   `yaml:"enabled"`
+	DryRun    bool                   `yaml:"dry_run"`
+	Receivers []NotifyReceiverConfig `yaml:"receivers"`
+}
+
+type NotifyReceiverConfig struct {
+	ID                 string   `yaml:"id"`
+	DisplayName        string   `yaml:"display_name,omitempty"`
+	Enabled            bool     `yaml:"enabled"`
+	Type               string   `yaml:"type"`
+	URLEnv             string   `yaml:"url_env,omitempty"`
+	Timeout            Duration `yaml:"timeout"`
+	Events             []string `yaml:"events,omitempty"`
+	Severities         []string `yaml:"severities,omitempty"`
+	AllowInsecureLocal bool     `yaml:"allow_insecure_local,omitempty"`
 }
 
 type ReceiverConfig struct {

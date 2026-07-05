@@ -33,3 +33,13 @@ func TestRulesValidateAndFixtureCLI(t *testing.T) {
 		t.Fatalf("rules test error = %v", err)
 	}
 }
+
+func TestNotificationsValidateAndDryRunCLI(t *testing.T) {
+	configPath := filepath.Join("..", "..", "docs", "config.example.yaml")
+	if err := runCLI([]string{"notifications", "validate", "--config", configPath}); err != nil {
+		t.Fatalf("notifications validate error = %v", err)
+	}
+	if err := runCLI([]string{"notifications", "test", "--config", configPath, "--receiver", "local-webhook", "--json", "--dry-run"}); err != nil {
+		t.Fatalf("notifications test error = %v", err)
+	}
+}

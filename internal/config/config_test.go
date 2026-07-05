@@ -388,6 +388,90 @@ func TestLoadBytesRejectsInvalidRuleConfig(t *testing.T) {
 	}
 }
 
+func TestLoadBytesRejectsInvalidNotifyConfig(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+		field string
+	}{
+		{
+			name: "duplicate receiver id",
+			block: `notify:
+  receivers:
+    - id: dup
+      type: noop
+      timeout: 1s
+    - id: dup
+      type: noop
+      timeout: 1s`,
+			field: "notify.receivers[1].id",
+		},
+		{
+			name: "unknown type",
+			block: `notify:
+  receivers:
+    - id: bad
+      type: email
+      timeout: 1s`,
+			field: "notify.receivers[0].type",
+		},
+		{
+			name: "enabled webhook missing destination",
+			block: `notify:
+  receivers:
+    - id: web
+      enabled: true
+      type: webhook
+      timeout: 1s`,
+			field: "notify.receivers[0].url_env",
+		},
+		{
+			name: "invalid timeout",
+			block: `notify:
+  receivers:
+    - id: web
+      type: webhook
+      url_env: POOLY_WEBHOOK_URL
+      timeout: 31s`,
+			field: "notify.receivers[0].timeout",
+		},
+		{
+			name: "invalid event",
+			block: `notify:
+  receivers:
+    - id: web
+      type: webhook
+      url_env: POOLY_WEBHOOK_URL
+      timeout: 1s
+      events: [opened, magic]`,
+			field: "notify.receivers[0].events[1]",
+		},
+		{
+			name: "invalid severity",
+			block: `notify:
+  receivers:
+    - id: web
+      type: webhook
+      url_env: POOLY_WEBHOOK_URL
+      timeout: 1s
+      severities: [warning, disaster]`,
+			field: "notify.receivers[0].severities[1]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := validConfigYAML + "\n" + tc.block + "\n"
+			_, err := LoadBytes(context.Background(), []byte(input))
+			if err == nil {
+				t.Fatal("LoadBytes() error = nil, want notify validation error")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
+			}
+		})
+	}
+}
+
 func TestLoadBytesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
