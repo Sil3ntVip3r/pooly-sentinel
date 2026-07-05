@@ -121,8 +121,16 @@ type ReceiverConfig struct {
 }
 
 type StorageConfig struct {
-	StateDir string `yaml:"state_dir"`
-	LogDir   string `yaml:"log_dir"`
+	StateDir           string       `yaml:"state_dir"`
+	LogDir             string       `yaml:"log_dir"`
+	DatabaseFile       string       `yaml:"database_file"`
+	CurrentMetricsFile string       `yaml:"current_metrics_file"`
+	SQLite             SQLiteConfig `yaml:"sqlite"`
+}
+
+type SQLiteConfig struct {
+	BusyTimeout Duration `yaml:"busy_timeout"`
+	WAL         bool     `yaml:"wal"`
 }
 
 type Duration struct {

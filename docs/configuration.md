@@ -17,5 +17,7 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - Production collectors are disabled in the Task 2 foundation.
 - Local file receiver is enabled as the free-core receiver.
 - Paid receivers are disabled and validation rejects enabled paid receivers.
+- SQLite uses a bounded busy timeout and WAL by default where supported.
+- Storage filenames must be plain filenames, not paths.
 
 See `docs/config.example.yaml`.

@@ -103,6 +103,9 @@ func (c Config) Validate() error {
 	validateReceivers(&errs, c.Receivers)
 	validateAbsolutePath(&errs, "storage.state_dir", c.Storage.StateDir)
 	validateAbsolutePath(&errs, "storage.log_dir", c.Storage.LogDir)
+	validateFileName(&errs, "storage.database_file", c.Storage.DatabaseFile)
+	validateFileName(&errs, "storage.current_metrics_file", c.Storage.CurrentMetricsFile)
+	validateDuration(&errs, "storage.sqlite.busy_timeout", c.Storage.SQLite.BusyTimeout.Duration)
 
 	if len(errs) > 0 {
 		return errs
@@ -184,6 +187,17 @@ func validateAbsolutePath(errs *ValidationErrors, field, value string) {
 	requireString(errs, field, value)
 	if value != "" && !filepath.IsAbs(value) {
 		errs.add(field, "must be an absolute path")
+	}
+	validateNoSecretLiteral(errs, field, value)
+}
+
+func validateFileName(errs *ValidationErrors, field, value string) {
+	requireString(errs, field, value)
+	if value == "" {
+		return
+	}
+	if filepath.IsAbs(value) || filepath.Base(value) != value || value == "." || value == ".." {
+		errs.add(field, "must be a plain filename")
 	}
 	validateNoSecretLiteral(errs, field, value)
 }

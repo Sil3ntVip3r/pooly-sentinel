@@ -4,15 +4,16 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Task 2 core foundation is implemented. Production monitoring remains intentionally unimplemented.
+Task 3 storage foundation is implemented. Production monitoring remains intentionally unimplemented.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
 - Primary service template: `systemd/pooly-sentinel-agent.service`
 - Configuration loading and validation are present
 - Redaction, structured logging, safe command execution, lifecycle signals, and version metadata are present
+- SQLite storage migrations, typed repositories, current-state JSON, JSONL events, evidence writing, and storage doctor checks are present
 - Install and uninstall scripts remain stubs only
-- Collectors, monitoring, storage, notification delivery, journald parsing, SSH checks, file watching, and resource collection are not implemented yet
+- Collectors, production monitoring loops, notification delivery, journald parsing, SSH checks, file watching, resource collection, rule evaluation, and incident lifecycle processing are not implemented yet
 
 The current `pooly-agent` entrypoint supports safe placeholder commands. `run` loads configuration and logging, then waits without starting production monitoring.
 
@@ -48,8 +49,8 @@ cmd/pooly-agent/          pooly-agent entrypoint
 internal/agent/           lifecycle and scheduler coordination
 internal/api/             localhost status, health, readiness, and metrics API
 internal/collectors/      resource, systemd, journal, SSH, filewatch, and audit collectors
-internal/command/         future safe command runner
-internal/config/          future config loader and validator
+internal/command/         safe command runner
+internal/config/          config loader and validator
 internal/incidents/       incident lifecycle and fingerprints
 internal/logging/         structured logging and redaction
 internal/metrics/         metric registry and safe labels

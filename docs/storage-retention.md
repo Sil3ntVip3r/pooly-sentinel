@@ -20,4 +20,23 @@ Pooly Sentinel will keep local state, event history, evidence, and rollups.
 
 ## Status
 
-Task 1 creates storage package placeholders only. No files are written under system state or log directories.
+Task 3 implements the storage foundation only:
+
+- SQLite state database creation and migrations
+- typed repository methods for metadata, collector state, incidents, and notification delivery history
+- atomic current-state JSON writing
+- append-only JSONL event writing
+- local incident evidence writing
+- storage-focused doctor checks
+
+Task 3 does not implement retention cleanup, resource aggregation, incident lifecycle processing, notification delivery, or production monitoring loops.
+
+## Permissions
+
+Intended defaults:
+
+- directories: `0750`
+- ordinary state and log files: `0640`
+- secret environment files: `0600`
+
+The implementation creates files with restrictive modes and respects the process umask.

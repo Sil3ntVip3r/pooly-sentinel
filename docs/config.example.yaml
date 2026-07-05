@@ -103,3 +103,8 @@ receivers:
 storage:
   state_dir: /var/lib/pooly-sentinel
   log_dir: /var/log/pooly-sentinel
+  database_file: state.db
+  current_metrics_file: metrics-current.json
+  sqlite:
+    busy_timeout: 5s
+    wal: true

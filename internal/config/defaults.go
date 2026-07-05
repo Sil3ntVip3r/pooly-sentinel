@@ -97,8 +97,14 @@ func Default() Config {
 			},
 		},
 		Storage: StorageConfig{
-			StateDir: DefaultStateDir,
-			LogDir:   DefaultLogDir,
+			StateDir:           DefaultStateDir,
+			LogDir:             DefaultLogDir,
+			DatabaseFile:       "state.db",
+			CurrentMetricsFile: "metrics-current.json",
+			SQLite: SQLiteConfig{
+				BusyTimeout: Duration{Duration: 5 * time.Second},
+				WAL:         true,
+			},
 		},
 	}
 }

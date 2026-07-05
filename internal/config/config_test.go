@@ -138,6 +138,39 @@ func TestLoadBytesRejectsUnsupportedVersion(t *testing.T) {
 	}
 }
 
+func TestLoadBytesRejectsInvalidStorageFilename(t *testing.T) {
+	input := strings.Replace(validConfigYAML, `storage:
+  state_dir: /var/lib/pooly-sentinel
+  log_dir: /var/log/pooly-sentinel`, `storage:
+  state_dir: /var/lib/pooly-sentinel
+  log_dir: /var/log/pooly-sentinel
+  database_file: ../state.db`, 1)
+	_, err := LoadBytes(context.Background(), []byte(input))
+	if err == nil {
+		t.Fatal("LoadBytes() error = nil, want storage filename validation error")
+	}
+	if !strings.Contains(err.Error(), "storage.database_file") {
+		t.Fatalf("error = %q, want storage.database_file", err.Error())
+	}
+}
+
+func TestLoadBytesRejectsInvalidStorageDuration(t *testing.T) {
+	input := strings.Replace(validConfigYAML, `storage:
+  state_dir: /var/lib/pooly-sentinel
+  log_dir: /var/log/pooly-sentinel`, `storage:
+  state_dir: /var/lib/pooly-sentinel
+  log_dir: /var/log/pooly-sentinel
+  sqlite:
+    busy_timeout: 0s`, 1)
+	_, err := LoadBytes(context.Background(), []byte(input))
+	if err == nil {
+		t.Fatal("LoadBytes() error = nil, want storage duration validation error")
+	}
+	if !strings.Contains(err.Error(), "storage.sqlite.busy_timeout") {
+		t.Fatalf("error = %q, want storage.sqlite.busy_timeout", err.Error())
+	}
+}
+
 func TestLoadBytesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

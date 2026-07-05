@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/config"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/logging"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/version"
 )
 
@@ -38,8 +40,7 @@ func runCLI(args []string) error {
 		fmt.Println("Pooly Sentinel status: production monitoring is not implemented yet.")
 		return nil
 	case "doctor":
-		fmt.Println("Pooly Sentinel doctor: core foundation is present; production monitoring checks are not implemented yet.")
-		return nil
+		return doctorCommand(args[1:])
 	default:
 		return fmt.Errorf("unknown pooly-agent command %q", args[0])
 	}
@@ -92,6 +93,36 @@ func checkCommand(args []string) error {
 	return nil
 }
 
+func doctorCommand(args []string) error {
+	configPath, err := parseConfigFlag(args)
+	if err != nil {
+		return fmt.Errorf("usage: pooly-agent doctor --config <path>: %w", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	fmt.Println("Pooly Sentinel doctor: storage foundation checks only. Production monitoring is not implemented.")
+	checks := storage.RunDoctor(ctx, storage.DoctorOptions{
+		StateDir:           cfg.Storage.StateDir,
+		LogDir:             cfg.Storage.LogDir,
+		DatabaseFile:       cfg.Storage.DatabaseFile,
+		CurrentMetricsFile: cfg.Storage.CurrentMetricsFile,
+		BusyTimeout:        cfg.Storage.SQLite.BusyTimeout.Duration,
+		WAL:                cfg.Storage.SQLite.WAL,
+	})
+	for _, check := range checks {
+		fmt.Printf("%s %s: %s\n", check.Status, check.Name, redaction.Redact(check.Message))
+	}
+	if storage.DoctorFailed(checks) {
+		return fmt.Errorf("storage doctor failed")
+	}
+	fmt.Printf("PASS storage database: %s\n", redaction.Redact(filepath.Join(cfg.Storage.StateDir, cfg.Storage.DatabaseFile)))
+	return nil
+}
+
 func parseConfigFlag(args []string) (string, error) {
 	var configPath string
 	for i := 0; i < len(args); i++ {
@@ -140,11 +171,11 @@ Usage:
   pooly-agent version
   pooly-agent run --config <path>
   pooly-agent check config --config <path>
-  status
-  doctor
+  pooly-agent status
+  pooly-agent doctor --config <path>
 
-Task 2 status:
-  Core configuration, redaction, logging, command runner, lifecycle, and CLI foundation only.
+Task status:
+  Core configuration, storage foundation, redaction, logging, command runner, lifecycle, and CLI foundation only.
   Production monitoring is not implemented.
 `)
 }
