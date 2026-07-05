@@ -10,4 +10,4 @@ This separation keeps collectors side-effect free:
 - no incidents
 - no service restarts
 - no security repair
-- no production scheduler
+- no scheduler logic inside collectors

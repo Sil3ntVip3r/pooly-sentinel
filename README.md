@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Step 8 localhost API, report preview, and systemd readiness wiring are implemented. Production monitoring remains intentionally unimplemented.
+Step 9 adds a disabled-by-default production monitoring scheduler and agent collection/evaluation loop on top of the Step 8 localhost API, report preview, and systemd readiness wiring.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -19,11 +19,12 @@ Step 8 localhost API, report preview, and systemd readiness wiring are implement
 - Single-cycle notification delivery can render safe payloads, send configured webhooks, persist attempts, and update `last_alerted` after success
 - Read-only localhost API endpoints expose safe health, readiness, status, incident, delivery-history, and report-summary JSON
 - Local report preview summarizes existing storage only
-- `pooly-agent run` opens storage, optionally starts the localhost API, sends truthful systemd readiness, and handles graceful shutdown
+- `pooly-agent run` opens storage, optionally starts the localhost API and scheduler, sends truthful systemd readiness, and handles graceful shutdown
+- Scheduler status and dry-run one-shot cycle commands are available
 - Install and uninstall scripts remain stubs only
-- Production monitoring loops, report delivery, remediation, updating, and dashboards are not implemented yet
+- The scheduler is disabled by default; report delivery, remediation, updating, public API exposure, and dashboards are not implemented yet
 
-The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, and infrastructure-only run lifecycle. `run` does not start production monitoring.
+The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, scheduler status/run-once diagnostics, and run lifecycle wiring. `run` starts scheduled collection only when `agent.scheduler.enabled` is explicitly true.
 
 ## Safety Rules
 

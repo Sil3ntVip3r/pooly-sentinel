@@ -1,6 +1,6 @@
 # Localhost API
 
-Step 8 adds a read-only HTTP API for local diagnostics.
+Step 8 adds a read-only HTTP API for local diagnostics. Step 9 adds safe scheduler status to the existing status and report paths.
 
 The API is disabled by default and binds to `127.0.0.1:9587` when enabled. Configuration validation rejects non-loopback bind addresses unless `api.allow_non_loopback` is explicitly set. The alpha agent has no dashboard and no public API by default.
 
@@ -15,7 +15,9 @@ The API is disabled by default and binds to `127.0.0.1:9587` when enabled. Confi
 - `GET /reports/summary`
 - `GET /metrics/status`
 
-All endpoints return JSON. There are no write endpoints in Step 8.
+All endpoints return JSON. There are no write endpoints.
+
+`GET /status` includes safe scheduler fields when the run lifecycle provides them: enabled/running state, interval, last attempt time, last successful cycle time, duration, error class and summary, cycle counts, consecutive failures, and active-cycle state.
 
 ## Safety
 
@@ -27,4 +29,4 @@ Notification delivery responses include delivery IDs, incident IDs, receiver IDs
 
 ## Boundaries
 
-The API does not run collectors, evaluate rules, create incidents, send notifications, remediate services, or start a production monitoring loop.
+The API does not run collectors, evaluate rules, create incidents, send notifications, remediate services, update the host, deliver reports, or start scheduler cycles.

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/reports"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
 )
@@ -75,6 +76,35 @@ func TestStatusEndpointRedactsStorageErrors(t *testing.T) {
 	}
 }
 
+func TestStatusEndpointIncludesSchedulerStatus(t *testing.T) {
+	server, err := NewServer(Options{
+		Enabled: true,
+		Listen:  "127.0.0.1:0",
+		Store:   testStore(t),
+		Now:     fixedNow,
+		SchedulerStatus: func() agent.SchedulerStatus {
+			return agent.SchedulerStatus{Enabled: true, Running: true, Interval: "1m0s", LastSafeErrorSummary: "token=supersecret"}
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	rec := perform(server, "/status")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status code = %d", rec.Code)
+	}
+	var response StatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if !response.Scheduler.Enabled || response.Scheduler.Interval != "1m0s" {
+		t.Fatalf("scheduler status = %+v", response.Scheduler)
+	}
+	if strings.Contains(rec.Body.String(), "supersecret") {
+		t.Fatalf("scheduler status leaked secret: %s", rec.Body.String())
+	}
+}
+
 func TestIncidentAndDeliveryEndpoints(t *testing.T) {
 	store := testStore(t)
 	incident := seedIncident(t, store, "inc-1", "open", "warning")
@@ -126,7 +156,7 @@ func TestReportEndpoint(t *testing.T) {
 	if strings.Contains(body, "supersecret") {
 		t.Fatalf("report leaked secret: %s", body)
 	}
-	if !strings.Contains(body, "production collector scheduling is not implemented") {
+	if !strings.Contains(body, "production scheduler is disabled unless explicitly configured") {
 		t.Fatalf("report missing limitation: %s", body)
 	}
 }

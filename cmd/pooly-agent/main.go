@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -50,7 +51,7 @@ func runCLI(args []string) error {
 	case "check":
 		return checkCommand(args[1:])
 	case "status":
-		fmt.Println("Pooly Sentinel status: production monitoring is not implemented yet.")
+		fmt.Println("Pooly Sentinel status: use `pooly-agent scheduler status --config <path>` for scheduler state.")
 		return nil
 	case "doctor":
 		return doctorCommand(args[1:])
@@ -66,9 +67,96 @@ func runCLI(args []string) error {
 		return apiCommand(args[1:])
 	case "reports":
 		return reportsCommand(args[1:])
+	case "scheduler":
+		return schedulerCommand(args[1:])
 	default:
 		return fmt.Errorf("unknown pooly-agent command %q", args[0])
 	}
+}
+
+func schedulerCommand(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: pooly-agent scheduler <status|run-once> --config <path>")
+	}
+	switch args[0] {
+	case "status":
+		return schedulerStatusCommand(args[1:])
+	case "run-once":
+		return schedulerRunOnceCommand(args[1:])
+	default:
+		return fmt.Errorf("unknown scheduler command %q", args[0])
+	}
+}
+
+func schedulerStatusCommand(args []string) error {
+	configPath, err := parseConfigFlag(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	dbPath := filepath.Join(cfg.Storage.StateDir, cfg.Storage.DatabaseFile)
+	if _, err := os.Stat(dbPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			printSchedulerStatus(schedulerConfiguredStatus(cfg))
+			return nil
+		}
+		return err
+	}
+	store, err := openConfiguredStore(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	status, ok, err := agent.LoadPersistedSchedulerStatus(ctx, store)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		status = schedulerConfiguredStatus(cfg)
+	}
+	printSchedulerStatus(status)
+	return nil
+}
+
+func schedulerRunOnceCommand(args []string) error {
+	configPath, jsonOutput, persist, err := parseSchedulerRunOnceFlags(args)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg, err := config.LoadFile(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	store, cleanup, err := openSchedulerRunOnceStore(ctx, cfg, persist)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	scheduler, err := schedulerFromConfig(cfg, store, persist, !persist, nil)
+	if err != nil {
+		return err
+	}
+	result, runErr := scheduler.RunOnce(ctx)
+	if jsonOutput {
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+	} else {
+		fmt.Printf("scheduler run-once observations=%d rule_results=%d transitions=%d delivered=%d failed=%d status_error=%s summary=%s\n",
+			len(result.Observations), len(result.Evaluation.Results), len(result.Evaluation.Transitions),
+			result.NotificationReport.Delivered, result.NotificationReport.Failed,
+			redaction.Redact(result.Status.LastSafeErrorClass), redaction.Redact(result.Status.LastSafeErrorSummary))
+	}
+	return runErr
 }
 
 func apiCommand(args []string) error {
@@ -87,7 +175,7 @@ func apiCommand(args []string) error {
 		if err != nil {
 			return err
 		}
-		server, err := api.NewServer(apiOptionsFromConfig(cfg, nil))
+		server, err := api.NewServer(apiOptionsFromConfig(cfg, nil, nil))
 		if err != nil {
 			return err
 		}
@@ -126,7 +214,7 @@ func reportsPreviewCommand(args []string) error {
 		return err
 	}
 	defer store.Close()
-	summary, err := reports.Generate(ctx, store, reportsOptionsFromConfig(cfg))
+	summary, err := reports.Generate(ctx, store, reportsOptionsFromConfig(cfg, nil))
 	if err != nil {
 		return err
 	}
@@ -468,9 +556,14 @@ func runCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	scheduler, err := schedulerFromConfig(cfg, store, true, cfg.Notify.DryRun, logger)
+	if err != nil {
+		_ = store.Close()
+		return err
+	}
 	var apiServer *api.Server
 	if cfg.API.Enabled {
-		apiServer, err = api.NewServer(apiOptionsFromConfig(cfg, store))
+		apiServer, err = api.NewServer(apiOptionsFromConfig(cfg, store, scheduler.Status))
 		if err != nil {
 			_ = store.Close()
 			return err
@@ -488,11 +581,16 @@ func runCommand(args []string) error {
 			watchdogInterval = notifyClient.WatchdogInterval(cfg.Systemd.WatchdogInterval.Duration)
 		}
 	}
-	fmt.Println("Pooly Sentinel run infrastructure active. Production scheduling is not implemented. Press Ctrl+C to exit.")
+	if cfg.Agent.Scheduler.Enabled {
+		fmt.Println("Pooly Sentinel run active. Scheduler enabled; remediation and report delivery are not implemented. Press Ctrl+C to exit.")
+	} else {
+		fmt.Println("Pooly Sentinel run infrastructure active. Scheduler disabled by config. Press Ctrl+C to exit.")
+	}
 	return agent.RunInfrastructure(ctx, agent.RuntimeOptions{
 		Logger:           logger,
 		Store:            store,
 		API:              apiServer,
+		Scheduler:        scheduler,
 		Notifier:         notifier,
 		ShutdownTimeout:  cfg.API.ShutdownTimeout.Duration,
 		WatchdogEnabled:  watchdogEnabled,
@@ -532,7 +630,7 @@ func doctorCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Pooly Sentinel doctor: storage foundation checks only. Production monitoring is not implemented.")
+	fmt.Println("Pooly Sentinel doctor: storage foundation checks only. Scheduler and collectors are not run.")
 	checks := storage.RunDoctor(ctx, storage.DoctorOptions{
 		StateDir:           cfg.Storage.StateDir,
 		LogDir:             cfg.Storage.LogDir,
@@ -714,7 +812,7 @@ func journalOptionsFromConfig(cfg config.Config, persist bool, store *storage.St
 func journalStreamFromConfig(name string, stream config.JournalStreamConfig) journal.StreamConfig {
 	return journal.StreamConfig{
 		Name:          name,
-		Enabled:       true,
+		Enabled:       stream.Enabled,
 		Timeout:       stream.Timeout.Duration,
 		MaxRecords:    stream.MaxRecords,
 		MaxBytes:      stream.MaxBytes,
@@ -763,7 +861,7 @@ func filewatchOptionsFromConfig(cfg config.Config, persist bool, store *storage.
 	return opts
 }
 
-func apiOptionsFromConfig(cfg config.Config, store api.Store) api.Options {
+func apiOptionsFromConfig(cfg config.Config, store api.Store, schedulerStatus func() agent.SchedulerStatus) api.Options {
 	return api.Options{
 		Enabled:          cfg.API.Enabled,
 		Listen:           config.EffectiveAPIListen(cfg.API),
@@ -772,16 +870,90 @@ func apiOptionsFromConfig(cfg config.Config, store api.Store) api.Options {
 		WriteTimeout:     cfg.API.WriteTimeout.Duration,
 		ShutdownTimeout:  cfg.API.ShutdownTimeout.Duration,
 		Store:            store,
-		Reports:          reportsOptionsFromConfig(cfg),
+		Reports:          reportsOptionsFromConfig(cfg, schedulerStatus),
+		SchedulerStatus:  schedulerStatus,
 	}
 }
 
-func reportsOptionsFromConfig(cfg config.Config) reports.Options {
+func reportsOptionsFromConfig(cfg config.Config, schedulerStatus func() agent.SchedulerStatus) reports.Options {
 	return reports.Options{
 		Enabled:         cfg.Reports.Enabled,
 		MaxIncidents:    cfg.Reports.MaxIncidents,
 		IncludeResolved: cfg.Reports.IncludeResolved,
+		SchedulerStatus: schedulerStatus,
 	}
+}
+
+func schedulerFromConfig(cfg config.Config, store *storage.Store, persist bool, dryRun bool, logger *slog.Logger) (*agent.Scheduler, error) {
+	loadedRules, err := rules.FromConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	notifyService, err := notificationServiceFromConfig(cfg, store, "", dryRun || cfg.Notify.DryRun, false)
+	if err != nil {
+		return nil, err
+	}
+	schedulerOpts := agent.SchedulerOptions{
+		Enabled:                cfg.Agent.Scheduler.Enabled,
+		Interval:               cfg.Agent.Scheduler.Interval.Duration,
+		RunOnStart:             cfg.Agent.Scheduler.RunOnStart,
+		CycleTimeout:           cfg.Agent.Scheduler.CycleTimeout.Duration,
+		MaxConsecutiveFailures: cfg.Agent.Scheduler.MaxConsecutiveFailures,
+		Logger:                 logger,
+		StatusStore:            agent.MetadataStatusStore{Store: store},
+	}
+	schedulerOpts.Collector = agent.CollectorFunc(func(ctx context.Context) ([]resources.Observation, error) {
+		return collectSchedulerObservations(ctx, cfg, persist, store), nil
+	})
+	schedulerOpts.Evaluator = agent.EvaluatorFunc(func(ctx context.Context, observations []resources.Observation) (rules.Evaluation, error) {
+		engine := rules.Engine{Rules: loadedRules, NodeID: cfg.Node.ID}
+		return engine.Evaluate(ctx, store, observations)
+	})
+	schedulerOpts.Notifier = agent.TransitionNotifierFunc(notifyService.DeliverTransitions)
+	return agent.NewScheduler(schedulerOpts), nil
+}
+
+func collectSchedulerObservations(ctx context.Context, cfg config.Config, persist bool, store *storage.Store) []resources.Observation {
+	var observations []resources.Observation
+	if cfg.Resources.Enabled {
+		observations = append(observations, resources.Collect(ctx, resourceOptionsFromConfig(cfg, persist, store))...)
+	}
+	if cfg.Systemd.Enabled {
+		observations = append(observations, systemd.Collect(ctx, systemdOptionsFromConfig(cfg))...)
+	}
+	if cfg.Journal.Auth.Enabled || cfg.Journal.Services.Enabled || cfg.Journal.Kernel.Enabled {
+		observations = append(observations, journal.Collect(ctx, journalOptionsFromConfig(cfg, persist, store))...)
+	}
+	if cfg.SSH.Enabled {
+		observations = append(observations, ssh.Collect(ctx, sshOptionsFromConfig(cfg))...)
+	}
+	if cfg.Filewatch.Enabled {
+		observations = append(observations, filewatch.Collect(ctx, filewatchOptionsFromConfig(cfg, persist, store))...)
+	}
+	return observations
+}
+
+func schedulerConfiguredStatus(cfg config.Config) agent.SchedulerStatus {
+	return agent.SchedulerStatus{
+		Enabled:                cfg.Agent.Scheduler.Enabled,
+		Running:                false,
+		Interval:               cfg.Agent.Scheduler.Interval.Duration.String(),
+		MaxConsecutiveFailures: cfg.Agent.Scheduler.MaxConsecutiveFailures,
+	}
+}
+
+func printSchedulerStatus(status agent.SchedulerStatus) {
+	fmt.Printf("scheduler enabled=%t running=%t interval=%s last_attempt=%s last_success=%s cycles=%d failed=%d active=%t error=%s summary=%s\n",
+		status.Enabled, status.Running, status.Interval, formatOptionalTime(status.LastAttemptAt), formatOptionalTime(status.LastSuccessfulCycleAt),
+		status.CycleCount, status.FailedCycleCount, status.CurrentlyRunningCycle,
+		redaction.Redact(status.LastSafeErrorClass), redaction.Redact(status.LastSafeErrorSummary))
+}
+
+func formatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func notificationServiceFromConfig(cfg config.Config, store notify.Store, receiverID string, dryRunOverride bool, allowDisabled bool) (notify.Service, error) {
@@ -980,6 +1152,34 @@ func parseReportsPreviewFlags(args []string) (configPath string, jsonOutput bool
 	return configPath, jsonOutput, nil
 }
 
+func parseSchedulerRunOnceFlags(args []string) (configPath string, jsonOutput bool, persist bool, err error) {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--config":
+			if i+1 >= len(args) || args[i+1] == "" {
+				return "", false, false, fmt.Errorf("--config requires a path")
+			}
+			if configPath != "" {
+				return "", false, false, fmt.Errorf("--config was provided more than once")
+			}
+			configPath = args[i+1]
+			i++
+		case "--json":
+			jsonOutput = true
+		case "--persist":
+			persist = true
+		case "--dry-run", "--no-persist":
+			persist = false
+		default:
+			return "", false, false, fmt.Errorf("unknown argument %q", args[i])
+		}
+	}
+	if configPath == "" {
+		return "", false, false, fmt.Errorf("--config <path> is required")
+	}
+	return configPath, jsonOutput, persist, nil
+}
+
 func parseCollectorRunFlags(args []string) (configPath string, jsonOutput bool, persist bool, err error) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1117,6 +1317,39 @@ func openRuleTestStore(ctx context.Context, cfg config.Config, persist bool) (*s
 	}, nil
 }
 
+func openSchedulerRunOnceStore(ctx context.Context, cfg config.Config, persist bool) (*storage.Store, func(), error) {
+	if persist {
+		store, err := openConfiguredStore(ctx, cfg)
+		return store, func() {
+			if store != nil {
+				_ = store.Close()
+			}
+		}, err
+	}
+	dir, err := os.MkdirTemp("", "pooly-scheduler-run-once-*")
+	if err != nil {
+		return nil, func() {}, err
+	}
+	cleanup := func() {
+		_ = os.RemoveAll(dir)
+	}
+	store, err := storage.Open(ctx, storage.SQLiteOptions{
+		Path:             filepath.Join(dir, "scheduler-run-once.db"),
+		CreateParentDirs: true,
+		BusyTimeout:      cfg.Storage.SQLite.BusyTimeout.Duration,
+		WAL:              cfg.Storage.SQLite.WAL,
+		Synchronous:      "NORMAL",
+	})
+	if err != nil {
+		cleanup()
+		return nil, func() {}, err
+	}
+	return store, func() {
+		_ = store.Close()
+		cleanup()
+	}, nil
+}
+
 func openConfiguredStore(ctx context.Context, cfg config.Config) (*storage.Store, error) {
 	return storage.Open(ctx, storage.SQLiteOptions{
 		Path:             filepath.Join(cfg.Storage.StateDir, cfg.Storage.DatabaseFile),
@@ -1193,11 +1426,13 @@ Usage:
   pooly-agent notifications deliveries --config <path> --incident <id>
   pooly-agent api check --config <path>
   pooly-agent reports preview --config <path> [--json]
+  pooly-agent scheduler status --config <path>
+  pooly-agent scheduler run-once --config <path> [--json] [--dry-run|--persist]
 
 Task status:
   Core foundation, storage foundation, one-shot Linux collectors, rule evaluation,
   incident lifecycle persistence, single-cycle notification delivery, localhost API,
-  report preview, and systemd readiness wiring are present.
-  Production monitoring, remediation, report delivery, and scheduling are not implemented.
+  report preview, systemd readiness wiring, and disabled-by-default scheduler are present.
+  Remediation, updater, dashboard, public API, and report delivery are not implemented.
 `)
 }

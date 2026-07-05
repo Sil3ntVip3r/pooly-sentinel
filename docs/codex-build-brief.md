@@ -52,4 +52,6 @@ Task 7 implements single-cycle notification delivery for incident lifecycle even
 
 Step 8 implements read-only localhost API endpoints, local report preview from existing storage, systemd readiness/watchdog notification, and infrastructure-only `pooly-agent run` lifecycle wiring.
 
-Production monitoring loops, report delivery, remediation, updating, public API serving, and dashboards remain intentionally unimplemented.
+Step 9 implements the disabled-by-default production monitoring scheduler and agent run loop. The scheduler orchestrates existing collectors, rule evaluation, incident lifecycle updates, notification delivery for incident transitions, and safe scheduler status persistence.
+
+Report delivery, remediation, updating, public API serving, dashboards, new collectors, and new notification receivers remain intentionally unimplemented.

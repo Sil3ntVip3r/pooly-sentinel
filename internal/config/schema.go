@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Version      string             `yaml:"version"`
 	Node         NodeConfig         `yaml:"node"`
+	Agent        AgentConfig        `yaml:"agent"`
 	API          APIConfig          `yaml:"api"`
 	Reports      ReportsConfig      `yaml:"reports"`
 	Logging      LoggingConfig      `yaml:"logging"`
@@ -35,6 +36,18 @@ type NodeConfig struct {
 	Role        string `yaml:"role"`
 	Environment string `yaml:"environment"`
 	Ring        string `yaml:"ring"`
+}
+
+type AgentConfig struct {
+	Scheduler SchedulerConfig `yaml:"scheduler"`
+}
+
+type SchedulerConfig struct {
+	Enabled                bool     `yaml:"enabled"`
+	Interval               Duration `yaml:"interval"`
+	RunOnStart             bool     `yaml:"run_on_start"`
+	CycleTimeout           Duration `yaml:"cycle_timeout"`
+	MaxConsecutiveFailures int      `yaml:"max_consecutive_failures"`
 }
 
 type APIConfig struct {

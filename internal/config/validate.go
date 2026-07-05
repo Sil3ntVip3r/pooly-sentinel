@@ -158,6 +158,7 @@ func (c Config) Validate() error {
 	validateNoSecretLiteral(&errs, "node.environment", c.Node.Environment)
 	validateNoSecretLiteral(&errs, "node.ring", c.Node.Ring)
 
+	validateScheduler(&errs, c.Agent.Scheduler)
 	validateAPI(&errs, c.API)
 	validateReports(&errs, c.Reports)
 
@@ -245,6 +246,18 @@ func validateAPI(errs *ValidationErrors, cfg APIConfig) {
 	validateDurationLimit(errs, "api.read_timeout", cfg.ReadTimeout.Duration, 30*time.Second)
 	validateDurationLimit(errs, "api.write_timeout", cfg.WriteTimeout.Duration, 30*time.Second)
 	validateDurationLimit(errs, "api.shutdown_timeout", cfg.ShutdownTimeout.Duration, 30*time.Second)
+}
+
+func validateScheduler(errs *ValidationErrors, cfg SchedulerConfig) {
+	validateDurationLimit(errs, "agent.scheduler.interval", cfg.Interval.Duration, 24*time.Hour)
+	if cfg.Interval.Duration > 0 && cfg.Interval.Duration < 10*time.Second {
+		errs.add("agent.scheduler.interval", "must be at least 10s")
+	}
+	validateDurationLimit(errs, "agent.scheduler.cycle_timeout", cfg.CycleTimeout.Duration, 23*time.Hour)
+	if cfg.Interval.Duration > 0 && cfg.CycleTimeout.Duration >= cfg.Interval.Duration {
+		errs.add("agent.scheduler.cycle_timeout", "must be less than agent.scheduler.interval")
+	}
+	validateIntRange(errs, "agent.scheduler.max_consecutive_failures", cfg.MaxConsecutiveFailures, 0, 1000)
 }
 
 func validateReports(errs *ValidationErrors, cfg ReportsConfig) {

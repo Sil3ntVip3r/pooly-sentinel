@@ -22,6 +22,14 @@ reports:
   max_incidents: 100
   include_resolved: true
 
+agent:
+  scheduler:
+    enabled: false
+    interval: 60s
+    run_on_start: false
+    cycle_timeout: 45s
+    max_consecutive_failures: 5
+
 logging:
   level: "info"
   format: "text"

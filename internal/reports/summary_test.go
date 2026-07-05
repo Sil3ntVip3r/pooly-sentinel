@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
 )
 
@@ -65,6 +66,9 @@ func TestGenerateSummaryFromStorage(t *testing.T) {
 		MaxIncidents:    100,
 		IncludeResolved: true,
 		Now:             fixedReportTime,
+		SchedulerStatus: func() agent.SchedulerStatus {
+			return agent.SchedulerStatus{Enabled: true, LastSafeErrorSummary: "token=supersecret"}
+		},
 	})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -84,6 +88,9 @@ func TestGenerateSummaryFromStorage(t *testing.T) {
 	}
 	if strings.Contains(string(data), "supersecret") {
 		t.Fatalf("summary leaked secret: %s", data)
+	}
+	if summary.Scheduler.LastSafeErrorSummary != "token=[REDACTED]" {
+		t.Fatalf("scheduler summary = %q, want redacted", summary.Scheduler.LastSafeErrorSummary)
 	}
 }
 

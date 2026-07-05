@@ -14,9 +14,12 @@ only after:
 - logging is initialized
 - SQLite storage is open and migrated
 - the localhost API is listening when `api.enabled` is true
+- the scheduler is initialized when `agent.scheduler.enabled` is true
 - the run lifecycle has reached its ready point
 
 If `NOTIFY_SOCKET` is absent, notification calls are safe no-ops.
+
+When `agent.scheduler.run_on_start` is true, the run lifecycle waits for the first cycle to complete or fail safely before sending readiness. That first-cycle result is reflected in scheduler status.
 
 ## Watchdog
 
@@ -32,4 +35,4 @@ Invalid notify sockets return errors to the caller for safe logging, but they do
 
 ## Boundaries
 
-Readiness does not mean production monitoring is running. Step 8 does not start collector scheduling, rule evaluation loops, notification loops, remediation, updating, or a dashboard.
+Readiness means configured runtime services are initialized. Scheduled monitoring is running only when `agent.scheduler.enabled` is true. Readiness does not mean remediation, updating, dashboard serving, public API exposure, report delivery, or automatic service changes are available.

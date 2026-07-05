@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/reports"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
@@ -42,6 +43,7 @@ type Options struct {
 	ShutdownTimeout  time.Duration
 	Store            Store
 	Reports          reports.Options
+	SchedulerStatus  func() agent.SchedulerStatus
 	Listener         net.Listener
 	Now              func() time.Time
 }
@@ -310,6 +312,9 @@ func (s *Server) status(ctx context.Context) StatusResponse {
 		IncidentCounts:   map[string]int64{},
 		DeliveryCounts:   map[string]int64{},
 		StorageAvailable: false,
+	}
+	if s.opts.SchedulerStatus != nil {
+		response.Scheduler = agent.SafeSchedulerStatus(s.opts.SchedulerStatus())
 	}
 	store := s.opts.Store
 	if store == nil {

@@ -9,6 +9,15 @@ func Default() Config {
 			Environment: "production",
 			Ring:        "alpha",
 		},
+		Agent: AgentConfig{
+			Scheduler: SchedulerConfig{
+				Enabled:                false,
+				Interval:               Duration{Duration: 60 * time.Second},
+				RunOnStart:             false,
+				CycleTimeout:           Duration{Duration: 45 * time.Second},
+				MaxConsecutiveFailures: 5,
+			},
+		},
 		API: APIConfig{
 			Enabled:         false,
 			Listen:          DefaultAPIBind,

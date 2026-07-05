@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/config"
 )
 
 func TestRulesValidateAndFixtureCLI(t *testing.T) {
@@ -51,6 +56,32 @@ func TestAPIAndReportsCLI(t *testing.T) {
 	}
 	if err := runCLI([]string{"reports", "preview", "--config", configPath, "--json"}); err != nil {
 		t.Fatalf("reports preview error = %v", err)
+	}
+}
+
+func TestSchedulerCLIStatusAndDryRun(t *testing.T) {
+	configPath := writeTempConfig(t)
+	if err := runCLI([]string{"scheduler", "status", "--config", configPath}); err != nil {
+		t.Fatalf("scheduler status error = %v", err)
+	}
+	if err := runCLI([]string{"scheduler", "run-once", "--config", configPath, "--json", "--dry-run"}); err != nil {
+		t.Fatalf("scheduler run-once dry-run error = %v", err)
+	}
+	cfg, err := config.LoadFile(context.Background(), configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	dbPath := filepath.Join(cfg.Storage.StateDir, cfg.Storage.DatabaseFile)
+	if _, err := os.Stat(dbPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dry-run touched configured database path err=%v", err)
+	}
+	store, err := openConfiguredStore(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("open configured store: %v", err)
+	}
+	defer store.Close()
+	if _, ok, err := agent.LoadPersistedSchedulerStatus(context.Background(), store); err != nil || ok {
+		t.Fatalf("dry-run persisted scheduler status ok=%t err=%v", ok, err)
 	}
 }
 

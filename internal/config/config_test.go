@@ -53,6 +53,9 @@ func TestLoadBytesValidConfig(t *testing.T) {
 	if cfg.API.Bind != DefaultAPIBind {
 		t.Fatalf("api.bind = %q, want %q", cfg.API.Bind, DefaultAPIBind)
 	}
+	if cfg.Agent.Scheduler.Enabled {
+		t.Fatal("scheduler default enabled = true, want false")
+	}
 }
 
 func TestLoadFile(t *testing.T) {
@@ -514,12 +517,75 @@ func TestLoadBytesRejectsInvalidStep8Config(t *testing.T) {
 			}
 			_, err := LoadBytes(context.Background(), []byte(input))
 			if err == nil {
-				t.Fatal("LoadBytes() error = nil, want Step 8 validation error")
+				t.Fatal("LoadBytes() error = nil, want API/report validation error")
 			}
 			if !strings.Contains(err.Error(), tc.field) {
 				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
 			}
 		})
+	}
+}
+
+func TestLoadBytesRejectsInvalidSchedulerConfig(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+		field string
+	}{
+		{
+			name: "short interval",
+			block: `agent:
+  scheduler:
+    interval: 1s
+    cycle_timeout: 500ms`,
+			field: "agent.scheduler.interval",
+		},
+		{
+			name: "timeout equal interval",
+			block: `agent:
+  scheduler:
+    interval: 60s
+    cycle_timeout: 60s`,
+			field: "agent.scheduler.cycle_timeout",
+		},
+		{
+			name: "negative failure limit",
+			block: `agent:
+  scheduler:
+    max_consecutive_failures: -1`,
+			field: "agent.scheduler.max_consecutive_failures",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := validConfigYAML + "\n" + tc.block + "\n"
+			_, err := LoadBytes(context.Background(), []byte(input))
+			if err == nil {
+				t.Fatal("LoadBytes() error = nil, want scheduler validation error")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
+			}
+		})
+	}
+}
+
+func TestLoadBytesAcceptsExplicitSchedulerConfig(t *testing.T) {
+	input := validConfigYAML + `
+agent:
+  scheduler:
+    enabled: true
+    interval: 60s
+    run_on_start: true
+    cycle_timeout: 45s
+    max_consecutive_failures: 3
+`
+	cfg, err := LoadBytes(context.Background(), []byte(input))
+	if err != nil {
+		t.Fatalf("LoadBytes() scheduler config error = %v", err)
+	}
+	if !cfg.Agent.Scheduler.Enabled || !cfg.Agent.Scheduler.RunOnStart {
+		t.Fatalf("scheduler config = %+v", cfg.Agent.Scheduler)
 	}
 }
 

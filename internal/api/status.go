@@ -3,23 +3,25 @@ package api
 import (
 	"time"
 
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
 )
 
 type StatusResponse struct {
-	ServiceStatus             string           `json:"service_status"`
-	CurrentTime               time.Time        `json:"current_time"`
-	StorageAvailable          bool             `json:"storage_available"`
-	SchemaVersion             int              `json:"schema_version"`
-	OpenIncidentCount         int64            `json:"open_incident_count"`
-	ResolvedIncidentCount     int64            `json:"resolved_incident_count"`
-	NotificationDeliveryCount int64            `json:"notification_delivery_count"`
-	IncidentCounts            map[string]int64 `json:"incident_counts"`
-	DeliveryCounts            map[string]int64 `json:"delivery_counts"`
-	Readiness                 bool             `json:"readiness"`
-	ErrorClass                string           `json:"error_class,omitempty"`
-	ErrorSummary              string           `json:"error_summary,omitempty"`
+	ServiceStatus             string                `json:"service_status"`
+	CurrentTime               time.Time             `json:"current_time"`
+	StorageAvailable          bool                  `json:"storage_available"`
+	SchemaVersion             int                   `json:"schema_version"`
+	OpenIncidentCount         int64                 `json:"open_incident_count"`
+	ResolvedIncidentCount     int64                 `json:"resolved_incident_count"`
+	NotificationDeliveryCount int64                 `json:"notification_delivery_count"`
+	IncidentCounts            map[string]int64      `json:"incident_counts"`
+	DeliveryCounts            map[string]int64      `json:"delivery_counts"`
+	Readiness                 bool                  `json:"readiness"`
+	Scheduler                 agent.SchedulerStatus `json:"scheduler"`
+	ErrorClass                string                `json:"error_class,omitempty"`
+	ErrorSummary              string                `json:"error_summary,omitempty"`
 }
 
 type IncidentResponse struct {

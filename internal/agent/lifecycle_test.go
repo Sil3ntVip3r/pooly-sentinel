@@ -11,6 +11,7 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	api := &fakeAPI{readyCh: make(chan struct{})}
+	scheduler := &fakeScheduler{startedCh: make(chan struct{})}
 	notifier := &fakeNotifier{api: api, readyCh: make(chan struct{})}
 	store := &fakeStore{}
 	watchdogStarted := make(chan struct{})
@@ -19,6 +20,7 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 		done <- RunInfrastructure(ctx, RuntimeOptions{
 			Store:           store,
 			API:             api,
+			Scheduler:       scheduler,
 			Notifier:        notifier,
 			ShutdownTimeout: time.Second,
 			WatchdogEnabled: true,
@@ -28,6 +30,11 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 			},
 		})
 	}()
+	select {
+	case <-scheduler.startedCh:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler was not started")
+	}
 	select {
 	case <-api.readyCh:
 	case <-time.After(time.Second):
@@ -55,8 +62,8 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("RunInfrastructure did not shut down")
 	}
-	if !api.shutdown || !store.closed || !notifier.stopping {
-		t.Fatalf("shutdown state api=%t store=%t stopping=%t", api.shutdown, store.closed, notifier.stopping)
+	if !api.shutdown || !store.closed || !notifier.stopping || !scheduler.stopped {
+		t.Fatalf("shutdown state api=%t store=%t stopping=%t scheduler=%t", api.shutdown, store.closed, notifier.stopping, scheduler.stopped)
 	}
 }
 
@@ -111,6 +118,23 @@ type fakeStore struct {
 
 func (s *fakeStore) Close() error {
 	s.closed = true
+	return nil
+}
+
+type fakeScheduler struct {
+	started   bool
+	stopped   bool
+	startedCh chan struct{}
+}
+
+func (s *fakeScheduler) Start(context.Context) error {
+	s.started = true
+	close(s.startedCh)
+	return nil
+}
+
+func (s *fakeScheduler) Stop(context.Context) error {
+	s.stopped = true
 	return nil
 }
 

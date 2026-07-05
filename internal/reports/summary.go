@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/storage"
 )
@@ -22,19 +23,21 @@ type Options struct {
 	MaxIncidents    int
 	IncludeResolved bool
 	Now             func() time.Time
+	SchedulerStatus func() agent.SchedulerStatus
 }
 
 type Summary struct {
-	GeneratedAt                time.Time         `json:"generated_at"`
-	StorageAvailable           bool              `json:"storage_available"`
-	SchemaVersion              int               `json:"schema_version"`
-	OpenIncidentsBySeverity    map[string]int64  `json:"open_incidents_by_severity"`
-	IncidentStatusCounts       map[string]int64  `json:"incident_status_counts"`
-	NotificationDeliveryCounts map[string]int64  `json:"notification_delivery_counts"`
-	RecentResolvedIncidents    []IncidentSummary `json:"recent_resolved_incidents,omitempty"`
-	KnownLimitations           []string          `json:"known_limitations"`
-	ErrorClass                 string            `json:"error_class,omitempty"`
-	ErrorSummary               string            `json:"error_summary,omitempty"`
+	GeneratedAt                time.Time             `json:"generated_at"`
+	StorageAvailable           bool                  `json:"storage_available"`
+	SchemaVersion              int                   `json:"schema_version"`
+	OpenIncidentsBySeverity    map[string]int64      `json:"open_incidents_by_severity"`
+	IncidentStatusCounts       map[string]int64      `json:"incident_status_counts"`
+	NotificationDeliveryCounts map[string]int64      `json:"notification_delivery_counts"`
+	Scheduler                  agent.SchedulerStatus `json:"scheduler"`
+	RecentResolvedIncidents    []IncidentSummary     `json:"recent_resolved_incidents,omitempty"`
+	KnownLimitations           []string              `json:"known_limitations"`
+	ErrorClass                 string                `json:"error_class,omitempty"`
+	ErrorSummary               string                `json:"error_summary,omitempty"`
 }
 
 type IncidentSummary struct {
@@ -67,10 +70,13 @@ func Generate(ctx context.Context, store Store, opts Options) (Summary, error) {
 		IncidentStatusCounts:       map[string]int64{},
 		NotificationDeliveryCounts: map[string]int64{},
 		KnownLimitations: []string{
-			"production collector scheduling is not implemented",
+			"production scheduler is disabled unless explicitly configured",
 			"report delivery is not implemented",
 			"dashboard and remediation are not implemented",
 		},
+	}
+	if opts.SchedulerStatus != nil {
+		summary.Scheduler = agent.SafeSchedulerStatus(opts.SchedulerStatus())
 	}
 	if store == nil {
 		summary.ErrorClass = "storage"

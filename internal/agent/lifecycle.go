@@ -50,10 +50,16 @@ type Notifier interface {
 	Stopping(ctx context.Context) error
 }
 
+type SchedulerService interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+}
+
 type RuntimeOptions struct {
 	Logger           *slog.Logger
 	Store            Store
 	API              APIService
+	Scheduler        SchedulerService
 	Notifier         Notifier
 	ShutdownTimeout  time.Duration
 	WatchdogEnabled  bool
@@ -76,13 +82,26 @@ func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 			closeStore(opts.Store, opts.Logger)
 			return err
 		}
-		opts.API.SetReady(true)
 		if opts.Logger != nil {
 			opts.Logger.InfoContext(ctx, "api listening",
 				slog.String("component", "api"),
 				slog.String("addr", opts.API.Addr()),
 			)
 		}
+	}
+	if opts.Scheduler != nil {
+		if err := opts.Scheduler.Start(ctx); err != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
+			defer cancel()
+			if opts.API != nil {
+				_ = opts.API.Shutdown(shutdownCtx)
+			}
+			closeStore(opts.Store, opts.Logger)
+			return err
+		}
+	}
+	if opts.API != nil {
+		opts.API.SetReady(true)
 	}
 	if opts.Notifier != nil {
 		if err := opts.Notifier.Ready(ctx); err != nil && opts.Logger != nil {
@@ -106,6 +125,11 @@ func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 	cancelWatchdog()
 	if opts.API != nil {
 		opts.API.SetReady(false)
+	}
+	if opts.Scheduler != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
+		_ = opts.Scheduler.Stop(shutdownCtx)
+		cancel()
 	}
 	if opts.Notifier != nil {
 		_ = opts.Notifier.Stopping(context.Background())
