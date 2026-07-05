@@ -20,5 +20,8 @@ Initial migration sequence:
 3. `incidents`
 4. `notification_deliveries`
 5. `rollup_metadata`
+6. `rule_and_incident_state`
 
-Task 3 includes tests for fresh migration, reopening an existing database, ordering, rollback on failure, future schema detection, and repeated initialization.
+Migration 6 adds incident fingerprints, incident last-transition time, and `rule_evaluation_state`. It is additive and does not delete collector state, incident history, or notification-delivery history.
+
+Task 3 includes tests for fresh migration, reopening an existing database, ordering, rollback on failure, future schema detection, and repeated initialization. Task 6 adds repository coverage for rule evaluation state and fingerprint lookup.

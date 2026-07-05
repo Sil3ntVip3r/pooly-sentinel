@@ -288,6 +288,106 @@ func TestLoadBytesRejectsInvalidTask5Config(t *testing.T) {
 	}
 }
 
+func TestLoadBytesRejectsInvalidRuleConfig(t *testing.T) {
+	cases := []struct {
+		name  string
+		block string
+		field string
+	}{
+		{
+			name: "duplicate rule id",
+			block: `rules:
+  - id: duplicate
+    enabled: true
+    collector: resources
+    metric: pooly_memory_available_ratio
+    warn:
+      operator: less_than
+      value: 0.2
+  - id: duplicate
+    enabled: true
+    collector: resources
+    metric: pooly_cpu_used_ratio
+    warn:
+      operator: greater_than
+      value: 0.8`,
+			field: "rules[1].id",
+		},
+		{
+			name: "unknown operator",
+			block: `rules:
+  - id: bad-operator
+    enabled: true
+    collector: resources
+    metric: pooly_memory_available_ratio
+    warn:
+      operator: regex_magic
+      value: 0.2`,
+			field: "rules[0].warn.operator",
+		},
+		{
+			name: "ratio out of range",
+			block: `rules:
+  - id: bad-ratio
+    enabled: true
+    collector: resources
+    metric: pooly_memory_available_ratio
+    warn:
+      operator: less_than
+      value: 2.0`,
+			field: "rules[0].warn.value",
+		},
+		{
+			name: "missing selector",
+			block: `rules:
+  - id: missing-selector
+    enabled: true
+    collector: resources
+    warn:
+      operator: less_than
+      value: 0.2`,
+			field: "rules[0].metric",
+		},
+		{
+			name: "unsupported metric",
+			block: `rules:
+  - id: unsupported-metric
+    enabled: true
+    collector: resources
+    metric: pooly_not_real_metric
+    warn:
+      operator: greater_than
+      value: 1`,
+			field: "rules[0].metric",
+		},
+		{
+			name: "secret summary",
+			block: `rules:
+  - id: secret-summary
+    enabled: true
+    collector: resources
+    metric: pooly_memory_available_ratio
+    summary: "token=abc123"
+    warn:
+      operator: less_than
+      value: 0.2`,
+			field: "rules[0].summary",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := validConfigYAML + "\n" + tc.block + "\n"
+			_, err := LoadBytes(context.Background(), []byte(input))
+			if err == nil {
+				t.Fatal("LoadBytes() error = nil, want rule validation error")
+			}
+			if !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("error = %q, want %s", err.Error(), tc.field)
+			}
+		})
+	}
+}
+
 func TestLoadBytesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

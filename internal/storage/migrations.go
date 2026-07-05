@@ -100,6 +100,33 @@ var defaultMigrations = []Migration{
 			)`,
 		},
 	},
+	{
+		Version: 6,
+		Name:    "rule_and_incident_state",
+		Statements: []string{
+			`ALTER TABLE incidents ADD COLUMN fingerprint TEXT`,
+			`ALTER TABLE incidents ADD COLUMN last_transition TEXT`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_incidents_fingerprint_unique
+				ON incidents(fingerprint)
+				WHERE fingerprint IS NOT NULL AND fingerprint != ''`,
+			`CREATE TABLE IF NOT EXISTS rule_evaluation_state (
+				rule_id TEXT NOT NULL,
+				target TEXT NOT NULL,
+				state TEXT NOT NULL,
+				severity TEXT NOT NULL,
+				condition_met_since TEXT,
+				recovery_since TEXT,
+				last_evaluated_at TEXT NOT NULL,
+				last_observed_at TEXT,
+				last_result_summary TEXT NOT NULL,
+				pending_severity TEXT,
+				updated_at TEXT NOT NULL,
+				PRIMARY KEY (rule_id, target)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_rule_evaluation_state_updated_at
+				ON rule_evaluation_state(updated_at)`,
+		},
+	},
 }
 
 func LatestSchemaVersion() int {

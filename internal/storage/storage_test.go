@@ -197,6 +197,7 @@ func TestIncidentAndNotificationPersistence(t *testing.T) {
 	now := time.Now().UTC()
 	incident := IncidentRecord{
 		ID:              "001:service:ssh.service:failed",
+		Fingerprint:     "001:service:ssh.service:failed",
 		NodeID:          "001",
 		Type:            "service",
 		Target:          "ssh.service",
@@ -219,6 +220,13 @@ func TestIncidentAndNotificationPersistence(t *testing.T) {
 	if got.ID != incident.ID || got.EvidencePath != incident.EvidencePath {
 		t.Fatalf("incident = %+v", got)
 	}
+	byFingerprint, err := store.GetIncidentByFingerprint(ctx, incident.Fingerprint)
+	if err != nil {
+		t.Fatalf("GetIncidentByFingerprint() error = %v", err)
+	}
+	if byFingerprint.ID != incident.ID {
+		t.Fatalf("incident by fingerprint = %+v", byFingerprint)
+	}
 	delivery := NotificationDeliveryRecord{
 		ID:          "delivery-1",
 		IncidentID:  incident.ID,
@@ -237,6 +245,67 @@ func TestIncidentAndNotificationPersistence(t *testing.T) {
 	}
 	if len(deliveries) != 1 || deliveries[0].ID != delivery.ID {
 		t.Fatalf("deliveries = %+v", deliveries)
+	}
+}
+
+func TestRuleEvaluationStatePersistence(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "state.db"))
+	defer store.Close()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	record := RuleEvaluationStateRecord{
+		RuleID:            "memory-low",
+		Target:            "system",
+		State:             "PENDING_WARN",
+		Severity:          "none",
+		ConditionMetSince: &now,
+		LastEvaluatedAt:   now,
+		LastResultSummary: "pending",
+		PendingSeverity:   "warning",
+	}
+	if err := store.UpsertRuleEvaluationState(ctx, record); err != nil {
+		t.Fatalf("UpsertRuleEvaluationState() error = %v", err)
+	}
+	got, err := store.GetRuleEvaluationState(ctx, record.RuleID, record.Target)
+	if err != nil {
+		t.Fatalf("GetRuleEvaluationState() error = %v", err)
+	}
+	if got.State != record.State || got.ConditionMetSince == nil || got.PendingSeverity != "warning" {
+		t.Fatalf("rule state = %+v", got)
+	}
+	list, err := store.ListRuleEvaluationState(ctx)
+	if err != nil {
+		t.Fatalf("ListRuleEvaluationState() error = %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("rule states = %d, want 1", len(list))
+	}
+}
+
+func TestRuleEvaluationTransactionRollback(t *testing.T) {
+	store := openTestStore(t, filepath.Join(t.TempDir(), "state.db"))
+	defer store.Close()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	err := store.RuleEvaluationTransaction(ctx, func(tx RuleEvaluationTransaction) error {
+		if err := tx.UpsertRuleEvaluationState(ctx, RuleEvaluationStateRecord{
+			RuleID:            "cpu-high",
+			Target:            "system",
+			State:             "WARN",
+			Severity:          "warning",
+			LastEvaluatedAt:   now,
+			LastResultSummary: "warning",
+		}); err != nil {
+			return err
+		}
+		return errors.New("force rollback")
+	})
+	if err == nil {
+		t.Fatal("RuleEvaluationTransaction() error = nil")
+	}
+	_, err = store.GetRuleEvaluationState(ctx, "cpu-high", "system")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRuleEvaluationState() error = %v, want ErrNotFound", err)
 	}
 }
 

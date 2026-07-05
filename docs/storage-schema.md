@@ -21,8 +21,9 @@ Schema ownership lives in versioned Go migration definitions under `internal/sto
 
 `incidents`
 
-- stores incident records for future lifecycle logic
-- Task 3 persists records but does not implement rule evaluation or incident transitions
+- stores local incident lifecycle records
+- includes stable fingerprint and last-transition fields added for Task 6
+- Task 6 does not send notifications
 
 `notification_deliveries`
 
@@ -33,6 +34,12 @@ Schema ownership lives in versioned Go migration definitions under `internal/sto
 
 - minimal groundwork for future rollup tables
 - Task 3 does not aggregate resources
+
+`rule_evaluation_state`
+
+- keyed by `rule_id` and `target`
+- stores pending/recovery state, severity, condition timing, last evaluation time, last observed time, and safe summaries
+- supports deterministic sustained-duration behavior across agent restarts
 
 ## Timestamp Policy
 

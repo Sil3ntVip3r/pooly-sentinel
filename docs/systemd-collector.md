@@ -28,4 +28,4 @@ Metrics include factual state such as unit presence, active/failed/activating/de
 
 Negative `MainPID`, `NRestarts`, or `ActiveEnterTimestampMonotonic` values are rejected as malformed.
 
-Missing units, inactive units, failed units, activating units, and deactivating units are observations only. Rule evaluation, severity, alerts, and incidents are deferred.
+Missing units, inactive units, failed units, activating units, and deactivating units are observations only. Task 6 rules may evaluate those observations, but the systemd collector itself does not assign severity, send alerts, create incidents, or remediate units.

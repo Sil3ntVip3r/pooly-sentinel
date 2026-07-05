@@ -59,14 +59,15 @@ func validateCollectorState(record CollectorStateRecord) error {
 
 func validateIncident(record IncidentRecord) error {
 	requiredFields := map[string]string{
-		"id":        record.ID,
-		"node_id":   record.NodeID,
-		"type":      record.Type,
-		"target":    record.Target,
-		"condition": record.Condition,
-		"severity":  record.Severity,
-		"status":    record.Status,
-		"summary":   record.Summary,
+		"id":          record.ID,
+		"fingerprint": record.Fingerprint,
+		"node_id":     record.NodeID,
+		"type":        record.Type,
+		"target":      record.Target,
+		"condition":   record.Condition,
+		"severity":    record.Severity,
+		"status":      record.Status,
+		"summary":     record.Summary,
 	}
 	for field, value := range requiredFields {
 		if err := required(value, field); err != nil {
@@ -81,6 +82,25 @@ func validateIncident(record IncidentRecord) error {
 	}
 	if record.OccurrenceCount < 0 {
 		return fmt.Errorf("occurrence_count cannot be negative")
+	}
+	return nil
+}
+
+func validateRuleEvaluationState(record RuleEvaluationStateRecord) error {
+	requiredFields := map[string]string{
+		"rule_id":             record.RuleID,
+		"target":              record.Target,
+		"state":               record.State,
+		"severity":            record.Severity,
+		"last_result_summary": record.LastResultSummary,
+	}
+	for field, value := range requiredFields {
+		if err := required(value, field); err != nil {
+			return err
+		}
+	}
+	if err := requiredTime("last_evaluated_at", record.LastEvaluatedAt); err != nil {
+		return err
 	}
 	return nil
 }

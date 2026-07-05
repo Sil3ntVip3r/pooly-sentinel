@@ -1,6 +1,6 @@
 # Agent Design
 
-This file reserves the high-level agent design notes requested by the build brief. The current repository state is Task 1 only, so this document describes intended boundaries rather than implemented behavior.
+This file reserves high-level agent design notes requested by the build brief. The repository now includes the core foundation, storage foundation, one-shot collectors, rule evaluation, and local incident lifecycle persistence. Production scheduling, notification delivery, API serving, systemd readiness, reporting, and remediation remain future work.
 
 ## Responsibilities
 

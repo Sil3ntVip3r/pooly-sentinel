@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Task 5 Linux collector families are implemented. Production monitoring remains intentionally unimplemented.
+Task 6 rule evaluation and local incident lifecycle persistence are implemented. Production monitoring remains intentionally unimplemented.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -14,10 +14,12 @@ Task 5 Linux collector families are implemented. Production monitoring remains i
 - SQLite storage migrations, typed repositories, current-state JSON, JSONL events, evidence writing, and storage doctor checks are present
 - Linux resource collectors emit typed observations for CPU, load, memory, PSI, filesystems, disk I/O, network, and uptime
 - Linux systemd, journald, SSH, and file-state collectors emit typed factual observations and safe events
+- Rule evaluation consumes typed observations and supports pending, sustained, critical, and recovery states
+- Incident lifecycle persistence deduplicates, escalates, resolves, and reopens local incident records by stable fingerprint
 - Install and uninstall scripts remain stubs only
-- Production monitoring loops, notification delivery, rule evaluation, alert policy, incident lifecycle processing, reporting, API serving, remediation, updating, and dashboards are not implemented yet
+- Production monitoring loops, notification delivery, reporting, API serving, remediation, updating, and dashboards are not implemented yet
 
-The current `pooly-agent` entrypoint supports safe placeholder commands and one-shot manual collector runs. `run` loads configuration and logging, then waits without starting production monitoring.
+The current `pooly-agent` entrypoint supports safe placeholder commands, one-shot manual collector runs, rule validation, fixture-based rule tests, and local incident inspection. `run` loads configuration and logging, then waits without starting production monitoring.
 
 ## Safety Rules
 
@@ -43,6 +45,8 @@ collector
 ```
 
 Collectors will never send notifications directly or create incidents directly.
+
+Rule evaluation owns WARN/FAIL/CRITICAL decisions. The incident engine owns local lifecycle state. Notification delivery remains future work.
 
 ## Repository Layout
 

@@ -37,9 +37,14 @@ Task 1 does not implement production monitoring.
 2. Storage foundation: SQLite state, JSONL events, evidence, retention.
 3. Resource collectors: CPU, memory, pressure, filesystem, disk I/O, network, uptime.
 4. systemd, journald, SSH, and filewatch collectors.
-5. Rule, incident, notification, reporting, API, and systemd integration.
-6. Tests and release checks.
+5. Rule engine and incident engine.
+6. Notification delivery, reporting, API, and systemd integration.
+7. Tests and release checks.
 
 ## Current Implementation Status
 
-Task 5 implements Linux systemd, journald, SSH, and file-state collectors in addition to the Task 4 Linux resource collectors. These collectors gather facts only. Production monitoring loops, notification delivery, rule evaluation, alert policy, incident lifecycle processing, reporting, API serving, systemd readiness, remediation, updating, and dashboards remain intentionally unimplemented.
+Task 5 implemented Linux systemd, journald, SSH, and file-state collectors in addition to the Task 4 Linux resource collectors. These collectors gather facts only.
+
+Task 6 implements deterministic rule evaluation and local incident lifecycle persistence. Rule thresholds are evaluated only from typed observations. The incident engine deduplicates, escalates, resolves, and reopens local incident records by stable fingerprint.
+
+Production monitoring loops, notification delivery, reporting, API serving, systemd readiness, remediation, updating, and dashboards remain intentionally unimplemented.

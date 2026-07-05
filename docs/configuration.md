@@ -26,5 +26,12 @@ The example config uses `POOLY_DISCORD_WEBHOOK` as an environment variable name 
 - journal streams use bounded JSON output, cursor state, field-length limits, and redacted summaries; raw journal dumps and full `MESSAGE` values are not emitted.
 - SSH collection uses effective configuration and listening socket facts only; it does not edit config files or restart SSH.
 - filewatch targets must be explicit absolute paths with type `file`, `directory`, or `any`; bounded file hashing uses no-follow descriptor reads and directory manifests expose truncation instead of silently replacing baselines.
+- Rules are typed YAML entries evaluated against collector observations only. They may define warning, failure, and critical thresholds plus sustained and recovery durations.
+- Rule evaluation owns WARN/FAIL/CRITICAL decisions. Collectors still emit facts only.
+- Incident lifecycle persistence is local-only. Notification delivery, production scheduling, remediation, API serving, and systemd readiness are not implemented in Task 6.
+
+## Rules
+
+Each rule has a stable `id`, `collector`, `metric` or `event_category`, optional `target`, threshold blocks, `recover_for`, and explicit missing/stale-data policies. Supported threshold operators are numeric comparison, equality/inequality, boolean true/false, state match, and event-category match. The configuration rejects duplicate IDs, unknown operators, unsafe targets, unsupported metric-name shapes, secret-bearing text, excessive summaries, and excessive rule counts.
 
 See `docs/config.example.yaml`.

@@ -19,6 +19,7 @@ type Config struct {
 	Journal      JournalConfig      `yaml:"journal"`
 	Filewatch    FilewatchConfig    `yaml:"filewatch"`
 	Audit        AuditConfig        `yaml:"audit"`
+	Rules        []RuleConfig       `yaml:"rules"`
 	Notification NotificationConfig `yaml:"notification"`
 	Receivers    []ReceiverConfig   `yaml:"receivers"`
 	Storage      StorageConfig      `yaml:"storage"`
@@ -166,6 +167,29 @@ type AuditConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 	Mode        string `yaml:"mode"`
 	ManageRules bool   `yaml:"manage_rules"`
+}
+
+type RuleConfig struct {
+	ID            string               `yaml:"id"`
+	Enabled       bool                 `yaml:"enabled"`
+	Collector     string               `yaml:"collector"`
+	Metric        string               `yaml:"metric,omitempty"`
+	Target        string               `yaml:"target,omitempty"`
+	EventCategory string               `yaml:"event_category,omitempty"`
+	Warn          *RuleThresholdConfig `yaml:"warn,omitempty"`
+	Fail          *RuleThresholdConfig `yaml:"fail,omitempty"`
+	Critical      *RuleThresholdConfig `yaml:"critical,omitempty"`
+	RecoverFor    Duration             `yaml:"recover_for"`
+	MissingData   string               `yaml:"missing_data"`
+	StaleData     string               `yaml:"stale_data"`
+	Summary       string               `yaml:"summary,omitempty"`
+	Labels        map[string]string    `yaml:"labels,omitempty"`
+}
+
+type RuleThresholdConfig struct {
+	Operator string   `yaml:"operator"`
+	Value    any      `yaml:"value"`
+	For      Duration `yaml:"for"`
 }
 
 type NotificationConfig struct {

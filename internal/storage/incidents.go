@@ -7,6 +7,14 @@ import (
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 )
 
+type incidentExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+type incidentQueryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func (s *Store) UpsertIncident(ctx context.Context, record IncidentRecord) error {
 	if err := validateIncident(record); err != nil {
 		return wrapError("upsert incident", ErrorClassValidation, err)
@@ -15,16 +23,21 @@ func (s *Store) UpsertIncident(ctx context.Context, record IncidentRecord) error
 	if err != nil {
 		return err
 	}
+	return upsertIncident(ctx, db, record)
+}
+
+func upsertIncident(ctx context.Context, execer incidentExecutor, record IncidentRecord) error {
 	updatedAt := record.UpdatedAt
 	if updatedAt.IsZero() {
 		updatedAt = nowUTC()
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO incidents(
-			id, node_id, type, target, condition, severity, status, summary,
+	_, err := execer.ExecContext(ctx, `INSERT INTO incidents(
+			id, fingerprint, node_id, type, target, condition, severity, status, summary,
 			first_seen, last_seen, last_alerted, occurrence_count, evidence_path,
-			resolved_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			resolved_at, last_transition, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
+			fingerprint = excluded.fingerprint,
 			node_id = excluded.node_id,
 			type = excluded.type,
 			target = excluded.target,
@@ -38,8 +51,10 @@ func (s *Store) UpsertIncident(ctx context.Context, record IncidentRecord) error
 			occurrence_count = excluded.occurrence_count,
 			evidence_path = excluded.evidence_path,
 			resolved_at = excluded.resolved_at,
+			last_transition = excluded.last_transition,
 			updated_at = excluded.updated_at`,
 		record.ID,
+		redaction.Redact(record.Fingerprint),
 		record.NodeID,
 		record.Type,
 		record.Target,
@@ -53,6 +68,7 @@ func (s *Store) UpsertIncident(ctx context.Context, record IncidentRecord) error
 		record.OccurrenceCount,
 		nullableString(record.EvidencePath),
 		nullableTime(record.ResolvedAt),
+		nullableTime(record.LastTransition),
 		formatTime(updatedAt),
 	)
 	if err != nil {
@@ -69,9 +85,33 @@ func (s *Store) GetIncident(ctx context.Context, id string) (IncidentRecord, err
 	if err != nil {
 		return IncidentRecord{}, err
 	}
-	row := db.QueryRowContext(ctx, `SELECT id, node_id, type, target, condition, severity, status, summary,
-		first_seen, last_seen, last_alerted, occurrence_count, evidence_path, resolved_at, updated_at
+	return getIncident(ctx, db, id)
+}
+
+func (s *Store) GetIncidentByFingerprint(ctx context.Context, fingerprint string) (IncidentRecord, error) {
+	if err := required(fingerprint, "incident fingerprint"); err != nil {
+		return IncidentRecord{}, wrapError("get incident by fingerprint", ErrorClassValidation, err)
+	}
+	db, err := s.database()
+	if err != nil {
+		return IncidentRecord{}, err
+	}
+	return getIncidentByFingerprint(ctx, db, fingerprint)
+}
+
+func getIncident(ctx context.Context, queryer incidentQueryer, id string) (IncidentRecord, error) {
+	row := queryer.QueryRowContext(ctx, `SELECT id, node_id, type, target, condition, severity, status, summary,
+		first_seen, last_seen, last_alerted, occurrence_count, evidence_path, resolved_at, updated_at,
+		COALESCE(fingerprint, ''), last_transition
 		FROM incidents WHERE id = ?`, id)
+	return scanIncident(row)
+}
+
+func getIncidentByFingerprint(ctx context.Context, queryer incidentQueryer, fingerprint string) (IncidentRecord, error) {
+	row := queryer.QueryRowContext(ctx, `SELECT id, node_id, type, target, condition, severity, status, summary,
+		first_seen, last_seen, last_alerted, occurrence_count, evidence_path, resolved_at, updated_at,
+		COALESCE(fingerprint, ''), last_transition
+		FROM incidents WHERE fingerprint = ?`, fingerprint)
 	return scanIncident(row)
 }
 
@@ -81,7 +121,8 @@ func (s *Store) ListIncidents(ctx context.Context) ([]IncidentRecord, error) {
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, node_id, type, target, condition, severity, status, summary,
-		first_seen, last_seen, last_alerted, occurrence_count, evidence_path, resolved_at, updated_at
+		first_seen, last_seen, last_alerted, occurrence_count, evidence_path, resolved_at, updated_at,
+		COALESCE(fingerprint, ''), last_transition
 		FROM incidents ORDER BY updated_at DESC, id`)
 	if err != nil {
 		return nil, wrapError("list incidents", ErrorClassQuery, err)
@@ -108,7 +149,7 @@ type incidentScanner interface {
 func scanIncident(scanner incidentScanner) (IncidentRecord, error) {
 	var record IncidentRecord
 	var firstSeen, lastSeen, updatedAt string
-	var lastAlerted, evidencePath, resolvedAt sql.NullString
+	var lastAlerted, evidencePath, resolvedAt, lastTransition sql.NullString
 	if err := scanner.Scan(
 		&record.ID,
 		&record.NodeID,
@@ -125,6 +166,8 @@ func scanIncident(scanner incidentScanner) (IncidentRecord, error) {
 		&evidencePath,
 		&resolvedAt,
 		&updatedAt,
+		&record.Fingerprint,
+		&lastTransition,
 	); err != nil {
 		return IncidentRecord{}, classifyQueryErr("scan incident", err)
 	}
@@ -149,6 +192,10 @@ func scanIncident(scanner incidentScanner) (IncidentRecord, error) {
 	record.UpdatedAt, err = parseTime(updatedAt)
 	if err != nil {
 		return IncidentRecord{}, wrapError("scan incident updated_at", ErrorClassQuery, err)
+	}
+	record.LastTransition, err = scanNullableTime(lastTransition)
+	if err != nil {
+		return IncidentRecord{}, wrapError("scan incident last_transition", ErrorClassQuery, err)
 	}
 	return record, nil
 }

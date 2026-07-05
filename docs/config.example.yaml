@@ -150,6 +150,152 @@ audit:
   mode: observe_only
   manage_rules: false
 
+rules:
+  - id: cpu-used-sustained
+    enabled: true
+    collector: resources
+    metric: pooly_cpu_used_ratio
+    target: system
+    warn:
+      operator: greater_than_or_equal
+      value: 0.85
+      for: 10m
+    fail:
+      operator: greater_than_or_equal
+      value: 0.95
+      for: 10m
+    recover_for: 5m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: memory-available-low
+    enabled: true
+    collector: resources
+    metric: pooly_memory_available_ratio
+    target: system
+    warn:
+      operator: less_than
+      value: 0.15
+      for: 10m
+    fail:
+      operator: less_than
+      value: 0.08
+      for: 10m
+    critical:
+      operator: less_than
+      value: 0.04
+      for: 5m
+    recover_for: 5m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: filesystem-capacity-high
+    enabled: true
+    collector: filesystem
+    metric: pooly_filesystem_used_ratio
+    target: any
+    warn:
+      operator: greater_than_or_equal
+      value: 0.85
+      for: 10m
+    fail:
+      operator: greater_than_or_equal
+      value: 0.95
+      for: 10m
+    recover_for: 5m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: filesystem-inodes-high
+    enabled: true
+    collector: filesystem
+    metric: pooly_filesystem_inodes_used_ratio
+    target: any
+    warn:
+      operator: greater_than_or_equal
+      value: 0.85
+      for: 10m
+    fail:
+      operator: greater_than_or_equal
+      value: 0.95
+      for: 10m
+    recover_for: 5m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: required-network-interface-down
+    enabled: false
+    collector: network
+    metric: pooly_network_interface_up
+    target: eth0
+    fail:
+      operator: boolean_false
+      for: 2m
+    recover_for: 2m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: required-systemd-service-failed
+    enabled: false
+    collector: systemd
+    metric: pooly_systemd_unit_failed
+    target: ssh.service
+    fail:
+      operator: boolean_true
+      for: 1m
+    recover_for: 2m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: forbidden-ssh-listener
+    enabled: false
+    collector: ssh_listeners
+    metric: pooly_ssh_forbidden_port_listening
+    target: "22"
+    fail:
+      operator: boolean_true
+      for: 1m
+    recover_for: 2m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: ssh-hardening-drift
+    enabled: false
+    collector: ssh_effective_config
+    metric: pooly_ssh_directive_expected_match
+    target: any
+    warn:
+      operator: boolean_false
+      for: 5m
+    fail:
+      operator: boolean_false
+      for: 30m
+    recover_for: 5m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} threshold state for {{target}}"
+
+  - id: kernel-oom-event
+    enabled: false
+    collector: journal
+    event_category: kernel_oom
+    target: kernel
+    fail:
+      operator: event_category_match
+      value: kernel_oom
+      for: 0s
+    recover_for: 5m
+    missing_data: stale
+    stale_data: stale
+    summary: "{{rule_id}} event state for {{target}}"
+
 notification:
   paid_receivers_enabled_by_default: false
 

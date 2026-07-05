@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"path"
 	"path/filepath"
@@ -16,7 +17,100 @@ import (
 var (
 	unitNamePattern       = regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.(?:service|socket|timer|target|mount|path|slice|scope)$`)
 	safeIdentifierPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+	ruleMetricPattern     = regexp.MustCompile(`^pooly_[a-z0-9_]+$`)
+	pressureMetricPattern = regexp.MustCompile(`^pooly_pressure_(cpu|memory|io)_(some|full)_(avg10|avg60|avg300|total_microseconds)$`)
+	ruleTargetPattern     = regexp.MustCompile(`^[A-Za-z0-9_.@:/-]+$`)
 )
+
+var knownRuleMetrics = map[string]struct{}{
+	"pooly_cpu_count":                                   {},
+	"pooly_cpu_iowait_ratio":                            {},
+	"pooly_cpu_load1":                                   {},
+	"pooly_cpu_load15":                                  {},
+	"pooly_cpu_load15_per_cpu":                          {},
+	"pooly_cpu_load1_per_cpu":                           {},
+	"pooly_cpu_load5":                                   {},
+	"pooly_cpu_load5_per_cpu":                           {},
+	"pooly_cpu_steal_ratio":                             {},
+	"pooly_cpu_used_ratio":                              {},
+	"pooly_disk_daily_read_bytes":                       {},
+	"pooly_disk_daily_write_bytes":                      {},
+	"pooly_disk_io_in_progress":                         {},
+	"pooly_disk_io_time_seconds_total":                  {},
+	"pooly_disk_read_bytes_total":                       {},
+	"pooly_disk_read_time_seconds_total":                {},
+	"pooly_disk_reads_total":                            {},
+	"pooly_disk_weighted_io_time_seconds_total":         {},
+	"pooly_disk_write_bytes_total":                      {},
+	"pooly_disk_write_time_seconds_total":               {},
+	"pooly_disk_writes_total":                           {},
+	"pooly_filesystem_available_bytes":                  {},
+	"pooly_filesystem_free_bytes":                       {},
+	"pooly_filesystem_inodes_free":                      {},
+	"pooly_filesystem_inodes_total":                     {},
+	"pooly_filesystem_inodes_used_ratio":                {},
+	"pooly_filesystem_readonly":                         {},
+	"pooly_filesystem_size_bytes":                       {},
+	"pooly_filesystem_used_bytes":                       {},
+	"pooly_filesystem_used_ratio":                       {},
+	"pooly_filewatch_manifest_complete":                 {},
+	"pooly_filewatch_manifest_truncated":                {},
+	"pooly_filewatch_target_changed":                    {},
+	"pooly_filewatch_target_exists":                     {},
+	"pooly_filewatch_target_oversized":                  {},
+	"pooly_filewatch_target_size_bytes":                 {},
+	"pooly_filewatch_target_symlink":                    {},
+	"pooly_journal_events_total":                        {},
+	"pooly_journal_truncated":                           {},
+	"pooly_memory_available_bytes":                      {},
+	"pooly_memory_available_ratio":                      {},
+	"pooly_memory_buffers_bytes":                        {},
+	"pooly_memory_cached_bytes":                         {},
+	"pooly_memory_dirty_bytes":                          {},
+	"pooly_memory_free_bytes":                           {},
+	"pooly_memory_kernel_stack_bytes":                   {},
+	"pooly_memory_page_tables_bytes":                    {},
+	"pooly_memory_slab_bytes":                           {},
+	"pooly_memory_sreclaimable_bytes":                   {},
+	"pooly_memory_sunreclaim_bytes":                     {},
+	"pooly_memory_total_bytes":                          {},
+	"pooly_memory_used_ratio":                           {},
+	"pooly_memory_writeback_bytes":                      {},
+	"pooly_network_daily_receive_bytes":                 {},
+	"pooly_network_daily_transmit_bytes":                {},
+	"pooly_network_interface_carrier":                   {},
+	"pooly_network_interface_mtu_bytes":                 {},
+	"pooly_network_interface_up":                        {},
+	"pooly_network_receive_bytes_total":                 {},
+	"pooly_network_receive_dropped_total":               {},
+	"pooly_network_receive_errors_total":                {},
+	"pooly_network_receive_packets_total":               {},
+	"pooly_network_transmit_bytes_total":                {},
+	"pooly_network_transmit_dropped_total":              {},
+	"pooly_network_transmit_errors_total":               {},
+	"pooly_network_transmit_packets_total":              {},
+	"pooly_ssh_directive_expected_match":                {},
+	"pooly_ssh_expected_port_listening":                 {},
+	"pooly_ssh_forbidden_port_listening":                {},
+	"pooly_swap_free_bytes":                             {},
+	"pooly_swap_total_bytes":                            {},
+	"pooly_swap_used_ratio":                             {},
+	"pooly_system_boot_id_changed":                      {},
+	"pooly_system_boot_time_timestamp_seconds":          {},
+	"pooly_system_uptime_seconds":                       {},
+	"pooly_systemd_unit_activating":                     {},
+	"pooly_systemd_unit_active":                         {},
+	"pooly_systemd_unit_active_enter_monotonic_seconds": {},
+	"pooly_systemd_unit_deactivating":                   {},
+	"pooly_systemd_unit_exec_main_code":                 {},
+	"pooly_systemd_unit_exec_main_status":               {},
+	"pooly_systemd_unit_failed":                         {},
+	"pooly_systemd_unit_main_pid":                       {},
+	"pooly_systemd_unit_present":                        {},
+	"pooly_systemd_unit_restart_count":                  {},
+	"pooly_tasks_runnable":                              {},
+	"pooly_tasks_total":                                 {},
+}
 
 type ValidationError struct {
 	Field   string
@@ -115,6 +209,7 @@ func (c Config) Validate() error {
 	if c.Audit.ManageRules {
 		errs.add("audit.manage_rules", "must be false during alpha")
 	}
+	validateRules(&errs, c.Rules)
 	if c.Notification.PaidReceiversEnabledByDefault {
 		errs.add("notification.paid_receivers_enabled_by_default", "must be false")
 	}
@@ -130,6 +225,195 @@ func (c Config) Validate() error {
 		return errs
 	}
 	return nil
+}
+
+func validateRules(errs *ValidationErrors, rules []RuleConfig) {
+	if len(rules) > 128 {
+		errs.add("rules", "must contain no more than 128 entries")
+	}
+	seen := map[string]struct{}{}
+	for i, rule := range rules {
+		prefix := fmt.Sprintf("rules[%d]", i)
+		requireString(errs, prefix+".id", rule.ID)
+		validateNoSecretLiteral(errs, prefix+".id", rule.ID)
+		if rule.ID != "" {
+			if !safeIdentifierPattern.MatchString(rule.ID) {
+				errs.add(prefix+".id", "must contain only letters, numbers, dot, underscore, or dash")
+			}
+			if _, ok := seen[rule.ID]; ok {
+				errs.add(prefix+".id", "duplicates another rule id")
+			}
+			seen[rule.ID] = struct{}{}
+		}
+		requireString(errs, prefix+".collector", rule.Collector)
+		validateOneOf(errs, prefix+".collector", rule.Collector,
+			"resources", "cpu", "load", "memory", "pressure", "filesystem", "diskio", "network", "uptime",
+			"systemd", "journal", "ssh", "ssh_effective_config", "ssh_listeners", "filewatch")
+		validateNoSecretLiteral(errs, prefix+".collector", rule.Collector)
+		if rule.Metric == "" && rule.EventCategory == "" {
+			errs.add(prefix+".metric", "metric or event_category is required")
+		}
+		if rule.Metric != "" {
+			if !ruleMetricPattern.MatchString(rule.Metric) {
+				errs.add(prefix+".metric", "must be a supported pooly_ metric name")
+			} else if !isKnownRuleMetric(rule.Metric) {
+				errs.add(prefix+".metric", "is not emitted by the implemented collectors")
+			}
+			validateNoSecretLiteral(errs, prefix+".metric", rule.Metric)
+		}
+		if rule.EventCategory != "" {
+			if !safeIdentifierPattern.MatchString(rule.EventCategory) {
+				errs.add(prefix+".event_category", "must contain only letters, numbers, dot, underscore, or dash")
+			}
+			validateNoSecretLiteral(errs, prefix+".event_category", rule.EventCategory)
+		}
+		if rule.Target != "" && rule.Target != "any" {
+			if len(rule.Target) > 128 {
+				errs.add(prefix+".target", "must be 128 bytes or shorter")
+			}
+			if !ruleTargetPattern.MatchString(rule.Target) {
+				errs.add(prefix+".target", "must use only safe target characters")
+			}
+			validateNoSecretLiteral(errs, prefix+".target", rule.Target)
+		}
+		validateNonNegativeDuration(errs, prefix+".recover_for", rule.RecoverFor.Duration)
+		validateNoSecretLiteral(errs, prefix+".summary", rule.Summary)
+		if len(rule.Summary) > 240 {
+			errs.add(prefix+".summary", "must be 240 bytes or shorter")
+		}
+		validateRuleLabels(errs, prefix+".labels", rule.Labels)
+		thresholds := 0
+		if rule.Warn != nil {
+			thresholds++
+			validateRuleThreshold(errs, prefix+".warn", rule.Metric, *rule.Warn)
+		}
+		if rule.Fail != nil {
+			thresholds++
+			validateRuleThreshold(errs, prefix+".fail", rule.Metric, *rule.Fail)
+		}
+		if rule.Critical != nil {
+			thresholds++
+			validateRuleThreshold(errs, prefix+".critical", rule.Metric, *rule.Critical)
+		}
+		if thresholds == 0 {
+			errs.add(prefix, "at least one warn, fail, or critical threshold is required")
+		}
+		validateRulePolicy(errs, prefix+".missing_data", rule.MissingData)
+		validateRulePolicy(errs, prefix+".stale_data", rule.StaleData)
+	}
+}
+
+func isKnownRuleMetric(metric string) bool {
+	if _, ok := knownRuleMetrics[metric]; ok {
+		return true
+	}
+	return pressureMetricPattern.MatchString(metric)
+}
+
+func validateRuleThreshold(errs *ValidationErrors, field string, metric string, threshold RuleThresholdConfig) {
+	validateOneOf(errs, field+".operator", threshold.Operator,
+		"greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal",
+		"equal", "not_equal", "boolean_true", "boolean_false", "state_match", "event_category_match")
+	validateNonNegativeDuration(errs, field+".for", threshold.For.Duration)
+	requiresNumeric := threshold.Operator == "greater_than" || threshold.Operator == "greater_than_or_equal" ||
+		threshold.Operator == "less_than" || threshold.Operator == "less_than_or_equal"
+	requiresString := threshold.Operator == "state_match" || threshold.Operator == "event_category_match"
+	if requiresNumeric {
+		value, ok := numericRuleValue(threshold.Value)
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) {
+			errs.add(field+".value", "must be a finite number")
+			return
+		}
+		if strings.Contains(metric, "_ratio") && (value < 0 || value > 1) {
+			errs.add(field+".value", "ratio thresholds must be between 0 and 1")
+		}
+		if value < 0 && !strings.Contains(metric, "temperature") {
+			errs.add(field+".value", "must not be negative for this metric")
+		}
+		return
+	}
+	if requiresString {
+		value, ok := threshold.Value.(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			errs.add(field+".value", "must be a non-empty string")
+			return
+		}
+		validateNoSecretLiteral(errs, field+".value", value)
+		if len(value) > 128 || !ruleTargetPattern.MatchString(value) {
+			errs.add(field+".value", "must use only safe bounded characters")
+		}
+		return
+	}
+	if threshold.Operator == "boolean_true" || threshold.Operator == "boolean_false" {
+		return
+	}
+	switch value := threshold.Value.(type) {
+	case int, int64, float64, float32:
+		number, ok := numericRuleValue(value)
+		if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
+			errs.add(field+".value", "must be finite")
+		}
+	case bool:
+	case string:
+		if strings.TrimSpace(value) == "" {
+			errs.add(field+".value", "must not be empty")
+		}
+		validateNoSecretLiteral(errs, field+".value", value)
+	default:
+		errs.add(field+".value", "must be a number, boolean, or string")
+	}
+}
+
+func numericRuleValue(value any) (float64, bool) {
+	switch v := value.(type) {
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
+func validateNonNegativeDuration(errs *ValidationErrors, field string, d time.Duration) {
+	if d < 0 {
+		errs.add(field, "must not be negative")
+	}
+}
+
+func validateRulePolicy(errs *ValidationErrors, field string, value string) {
+	if value == "" {
+		return
+	}
+	validateOneOf(errs, field, value, "ignore", "stale", "warn", "fail")
+	validateNoSecretLiteral(errs, field, value)
+}
+
+func validateRuleLabels(errs *ValidationErrors, field string, labels map[string]string) {
+	if len(labels) > 16 {
+		errs.add(field, "must contain no more than 16 labels")
+	}
+	allowed := map[string]struct{}{
+		"collector": {}, "cpu": {}, "mount": {}, "device": {}, "interface": {},
+		"pressure_type": {}, "window": {}, "unit": {}, "stream": {}, "directive": {},
+		"port": {}, "watch": {}, "event_category": {},
+	}
+	for key, value := range labels {
+		if _, ok := allowed[key]; !ok {
+			errs.add(field+"."+key, "is not an allowlisted rule label")
+		}
+		if strings.TrimSpace(value) == "" {
+			errs.add(field+"."+key, "must not be empty")
+		}
+		if len(value) > 128 || strings.ContainsAny(value, "\n\r\t") {
+			errs.add(field+"."+key, "must be bounded and single-line")
+		}
+		validateNoSecretLiteral(errs, field+"."+key, value)
+	}
 }
 
 func requireString(errs *ValidationErrors, field, value string) {

@@ -22,6 +22,7 @@ type CollectorStateRecord struct {
 
 type IncidentRecord struct {
 	ID              string
+	Fingerprint     string
 	NodeID          string
 	Type            string
 	Target          string
@@ -35,6 +36,7 @@ type IncidentRecord struct {
 	OccurrenceCount int64
 	EvidencePath    string
 	ResolvedAt      *time.Time
+	LastTransition  *time.Time
 	UpdatedAt       time.Time
 }
 
@@ -49,4 +51,18 @@ type NotificationDeliveryRecord struct {
 	DeliveredAt  *time.Time
 	ErrorClass   string
 	ErrorSummary string
+}
+
+type RuleEvaluationStateRecord struct {
+	RuleID            string
+	Target            string
+	State             string
+	Severity          string
+	ConditionMetSince *time.Time
+	RecoverySince     *time.Time
+	LastEvaluatedAt   time.Time
+	LastObservedAt    *time.Time
+	LastResultSummary string
+	PendingSeverity   string
+	UpdatedAt         time.Time
 }
