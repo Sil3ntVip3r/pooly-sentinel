@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Step 11 adds security hardening and alpha acceptance fixes on top of the Step 10 install/service and release-readiness baseline.
+Step 12 records the documentation-only alpha acceptance audit on top of the Step 11 security hardening and release-readiness baseline.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -23,6 +23,7 @@ Step 11 adds security hardening and alpha acceptance fixes on top of the Step 10
 - Scheduler status and dry-run one-shot cycle commands are available
 - Hardened install/uninstall helpers, release checks with `govulncheck`, secret scanning, local dry-run validation, no-follow state/log file handling, and watchdog shutdown joins are available
 - Generic webhooks do not follow redirects; redirect responses are delivery failures and redirect targets are not included in summaries
+- The Step 12 alpha acceptance audit passed for `14d5dbf fix: harden alpha security boundaries`; see `docs/alpha-acceptance-audit.md`
 - The scheduler is disabled by default; report delivery, remediation, updating, public API exposure, new notification receivers, broad new collectors, and dashboards are not implemented
 
 The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, scheduler status/run-once diagnostics, doctor checks, and run lifecycle wiring. `run` starts scheduled collection only when `agent.scheduler.enabled` is explicitly true.

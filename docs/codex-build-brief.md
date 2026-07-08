@@ -58,4 +58,6 @@ Step 10 implements alpha hardening and release readiness: hardened install/unins
 
 Step 11 implements security hardening and alpha acceptance fixes only: no-follow webhook redirects, stricter journald cursor behavior, SSH effective-config Match profile coverage, no-follow state/log file opens, command timeout process-group cleanup, API serve-error status reporting, govulncheck release checks, installer/uninstaller path validation, expanded redaction, atomic directory sync error returns, watchdog goroutine shutdown joins, and shared evidence path safety.
 
+Step 12 records the documentation-only alpha acceptance audit for commit `14d5dbf fix: harden alpha security boundaries`. The audit verdict is ready for alpha acceptance, with no alpha blockers and no runtime code changes required. The detailed acceptance record is in `docs/alpha-acceptance-audit.md`.
+
 Report delivery, remediation, updating, public API serving, dashboards, broad new collectors, new notification receivers, remote fleet hub, real deployment, and Pooly Server Guard modifications remain intentionally unimplemented.
