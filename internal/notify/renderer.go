@@ -1,9 +1,6 @@
 package notify
 
 import (
-	"net/url"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
@@ -11,6 +8,10 @@ import (
 )
 
 func RenderPayload(incident storage.IncidentRecord, event Event) Payload {
+	return RenderPayloadWithEvidenceRoot(incident, event, "")
+}
+
+func RenderPayloadWithEvidenceRoot(incident storage.IncidentRecord, event Event, evidenceRoot string) Payload {
 	return Payload{
 		Event:           event,
 		IncidentID:      redaction.Redact(incident.ID),
@@ -27,7 +28,7 @@ func RenderPayload(incident storage.IncidentRecord, event Event) Payload {
 		OccurrenceCount: incident.OccurrenceCount,
 		LastTransition:  utcPtr(incident.LastTransition),
 		ResolvedAt:      utcPtr(incident.ResolvedAt),
-		EvidencePath:    safeEvidencePath(incident.EvidencePath),
+		EvidencePath:    storage.SafeEvidencePath(incident.EvidencePath, evidenceRoot),
 	}
 }
 
@@ -48,29 +49,4 @@ func utcPtr(t *time.Time) *time.Time {
 	}
 	utc := t.UTC()
 	return &utc
-}
-
-func safeEvidencePath(path string) string {
-	if path == "" {
-		return ""
-	}
-	if redaction.Redact(path) != path {
-		return ""
-	}
-	if strings.ContainsAny(path, "\x00\r\n\t") {
-		return ""
-	}
-	if parsed, err := url.Parse(path); err == nil && parsed.Scheme != "" {
-		return ""
-	}
-	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
-		if part == ".." {
-			return ""
-		}
-	}
-	clean := filepath.Clean(path)
-	if clean == "." || clean == ".." || strings.Contains(clean, ".."+string(filepath.Separator)) {
-		return ""
-	}
-	return clean
 }

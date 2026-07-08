@@ -376,6 +376,52 @@ func TestWebhookReceiverSuccessFailureTimeoutAndRedaction(t *testing.T) {
 	}
 }
 
+func TestWebhookDefaultClientDoesNotFollowRedirects(t *testing.T) {
+	client := noRedirectHTTPClient()
+	req := httptest.NewRequest(http.MethodGet, "https://example.test/redirected?token=supersecret", nil)
+	if err := client.CheckRedirect(req, []*http.Request{{}}); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatalf("CheckRedirect() error = %v, want ErrUseLastResponse", err)
+	}
+}
+
+func TestWebhookReceiverTreatsRedirectStatusAsFailure(t *testing.T) {
+	redirectDoer := handlerDoer{handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "/redirected?token=supersecret")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+		_, _ = w.Write([]byte(`<a href="/redirected?token=supersecret">redirect</a>`))
+	})}
+	receiver := NewWebhookReceiver(ReceiverSpec{ID: "web", Type: "webhook", Enabled: true, URL: "https://example.test/hook", Timeout: time.Second}, redirectDoer)
+	outcome := receiver.Deliver(context.Background(), RenderPayload(testIncident("warning"), EventOpened))
+	if outcome.Success || outcome.ErrorClass != "http_status" || !strings.Contains(outcome.Summary, "HTTP 307") {
+		t.Fatalf("redirect outcome = %+v", outcome)
+	}
+	if strings.Contains(outcome.Summary, "supersecret") || strings.Contains(outcome.Summary, "/redirected") {
+		t.Fatalf("redirect summary leaked target: %q", outcome.Summary)
+	}
+}
+
+func TestRenderPayloadEvidencePathSafety(t *testing.T) {
+	root := t.TempDir()
+	incident := testIncident("warning")
+	incident.EvidencePath = root + "/incidents/open/id/evidence.v1.json"
+	payload := RenderPayloadWithEvidenceRoot(incident, EventOpened, root)
+	if payload.EvidencePath != "incidents/open/id/evidence.v1.json" {
+		t.Fatalf("evidence path = %q", payload.EvidencePath)
+	}
+	for _, unsafe := range []string{
+		"https://example.test/evidence.json",
+		"incidents/open/../secret.json",
+		"incidents/open/id/token=supersecret.json",
+		root + "-other/evidence.json",
+	} {
+		incident.EvidencePath = unsafe
+		payload = RenderPayloadWithEvidenceRoot(incident, EventOpened, root)
+		if payload.EvidencePath != "" {
+			t.Fatalf("unsafe evidence path %q rendered as %q", unsafe, payload.EvidencePath)
+		}
+	}
+}
+
 func TestOptionsFromConfigWebhookURLValidation(t *testing.T) {
 	cfg := config.Default()
 	cfg.Notify.Enabled = true

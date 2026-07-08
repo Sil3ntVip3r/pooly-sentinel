@@ -48,6 +48,14 @@ func TestParseJSONLinesNormalizesAndRedacts(t *testing.T) {
 	if strings.Contains(event.Summary, "supersecret") {
 		t.Fatalf("event leaked secret: %+v", event)
 	}
+	if _, ok := event.Fields["MESSAGE"]; ok {
+		t.Fatalf("event emitted raw MESSAGE: %+v", event.Fields)
+	}
+	for label := range event.Labels {
+		if strings.Contains(label, "user") || strings.Contains(label, "ip") || strings.Contains(label, "addr") {
+			t.Fatalf("event emitted unsafe label %q", label)
+		}
+	}
 }
 
 func TestParseJSONLinesMalformedAndBounded(t *testing.T) {
@@ -89,7 +97,8 @@ func TestCollectCursorPersistenceDryRunAndReset(t *testing.T) {
 		Runner:            runner,
 		Streams:           []StreamConfig{{Name: "services", Enabled: true, MaxRecords: 10, MaxBytes: 4096, MaxFieldBytes: 128}},
 	})
-	if len(obs) != 1 || len(obs[0].Events) != 1 || !strings.Contains(strings.Join(runner.specs[0].Args, " "), "--after-cursor") {
+	joinedArgs := strings.Join(runner.specs[0].Args, " ")
+	if len(obs) != 1 || len(obs[0].Events) != 1 || !strings.Contains(joinedArgs, "--after-cursor") || strings.Contains(joinedArgs, "--lines=") {
 		t.Fatalf("incremental dry-run obs=%+v args=%#v", obs, runner.specs)
 	}
 	raw, err := store.Get(context.Background(), "journal", "services")
@@ -169,6 +178,12 @@ func TestJournalDoesNotSaveCursorAfterIncompleteProcessing(t *testing.T) {
 			err:       &command.CommandError{Class: command.ErrorClassTimeout, Err: errors.New("deadline")},
 			wantClass: resources.ErrorTimeout,
 		},
+		{
+			name:      "canceled with partial stdout",
+			result:    command.Result{Stdout: `{"__CURSOR":"c1","MESSAGE":"one"}` + "\n"},
+			err:       &command.CommandError{Class: command.ErrorClassCanceled, Err: context.Canceled},
+			wantClass: resources.ErrorTimeout,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,6 +210,31 @@ func TestJournalDoesNotSaveCursorAfterIncompleteProcessing(t *testing.T) {
 				t.Fatalf("cursor was overwritten after %s: %s", tc.name, raw)
 			}
 		})
+	}
+}
+
+func TestJournalSavesCursorOnlyAfterCompleteSuccess(t *testing.T) {
+	store := resources.NewMemoryStateStore()
+	if err := saveCursor(context.Background(), store, true, "auth", "old"); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeRunner{results: []command.Result{{Stdout: `{"__CURSOR":"next","MESSAGE":"Accepted publickey"}` + "\n"}}}
+	obs := Collect(context.Background(), Options{
+		PlatformSupported: platform.Bool(true),
+		Persist:           true,
+		State:             store,
+		Runner:            runner,
+		Streams:           []StreamConfig{{Name: "auth", Enabled: true, MaxRecords: 10, MaxBytes: 4096, MaxFieldBytes: 128}},
+	})
+	if len(obs) != 1 || !obs[0].Success {
+		t.Fatalf("obs = %+v", obs)
+	}
+	raw, err := store.Get(context.Background(), "journal", "auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, "next") || strings.Contains(raw, "old") {
+		t.Fatalf("cursor was not advanced after success: %s", raw)
 	}
 }
 

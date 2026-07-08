@@ -57,7 +57,7 @@ type DeliveryResponse struct {
 	ErrorSummary string     `json:"error_summary,omitempty"`
 }
 
-func safeIncident(record storage.IncidentRecord) IncidentResponse {
+func safeIncident(record storage.IncidentRecord, evidenceRoot string) IncidentResponse {
 	return IncidentResponse{
 		ID:              redaction.Redact(record.ID),
 		Fingerprint:     redaction.Redact(record.Fingerprint),
@@ -72,7 +72,7 @@ func safeIncident(record storage.IncidentRecord) IncidentResponse {
 		LastSeen:        record.LastSeen.UTC(),
 		LastAlerted:     utcPtr(record.LastAlerted),
 		OccurrenceCount: record.OccurrenceCount,
-		EvidencePath:    safeEvidencePath(record.EvidencePath),
+		EvidencePath:    storage.SafeEvidencePath(record.EvidencePath, evidenceRoot),
 		ResolvedAt:      utcPtr(record.ResolvedAt),
 		LastTransition:  utcPtr(record.LastTransition),
 		UpdatedAt:       record.UpdatedAt.UTC(),

@@ -82,6 +82,65 @@ func TestUninstallDryRunDoesNotDeleteTargets(t *testing.T) {
 	}
 }
 
+func TestInstallRejectsDangerousPaths(t *testing.T) {
+	root := repoRoot(t)
+	binary := fakePoolyAgent(t, t.TempDir())
+	cmd := exec.Command("bash",
+		filepath.Join(root, "scripts", "install.sh"),
+		"--dry-run",
+		"--binary", binary,
+		"--prefix", "/",
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("install accepted dangerous prefix:\n%s", out)
+	}
+	if !strings.Contains(string(out), "dangerous") {
+		t.Fatalf("install rejection did not explain dangerous path:\n%s", out)
+	}
+
+	cmd = exec.Command("bash",
+		filepath.Join(root, "scripts", "install.sh"),
+		"--dry-run",
+		"--binary", "pooly-agent",
+	)
+	out, err = cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "absolute path") {
+		t.Fatalf("install relative binary rejection err=%v out=\n%s", err, out)
+	}
+}
+
+func TestUninstallRejectsDangerousPurgePaths(t *testing.T) {
+	root := repoRoot(t)
+	cmd := exec.Command("bash",
+		filepath.Join(root, "scripts", "uninstall.sh"),
+		"--dry-run",
+		"--purge-logs", "--confirm-purge-logs",
+		"--log-dir", "/var/log",
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("uninstall accepted dangerous purge path:\n%s", out)
+	}
+	if !strings.Contains(string(out), "too broad") && !strings.Contains(string(out), "dangerous") {
+		t.Fatalf("uninstall rejection did not explain broad path:\n%s", out)
+	}
+}
+
+func TestReleaseCheckRequiresGovulncheck(t *testing.T) {
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "scripts", "check-release.sh"))
+	if err != nil {
+		t.Fatalf("read check-release.sh: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{"command -v govulncheck", "govulncheck ./...", "go install golang.org/x/vuln/cmd/govulncheck@latest"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("check-release.sh missing %q", want)
+		}
+	}
+}
+
 func TestReleaseScriptsExistAndAreExecutable(t *testing.T) {
 	root := repoRoot(t)
 	for _, name := range []string{"install.sh", "uninstall.sh", "check-release.sh", "local-dry-run.sh", "scan-secrets.sh"} {

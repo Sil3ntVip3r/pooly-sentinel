@@ -69,42 +69,47 @@ func Collect(ctx context.Context, opts Options) []resources.Observation {
 
 func collectEffective(ctx context.Context, opts Options) resources.Observation {
 	started := time.Now()
-	result, err := opts.Runner.Run(ctx, command.CommandSpec{
-		Path:         opts.SSHDPath,
-		Args:         []string{"-T", "-C", "user=pooly-sentinel,host=localhost,addr=127.0.0.1"},
-		Timeout:      opts.Timeout,
-		MaxStdout:    opts.MaxStdout,
-		MaxStderr:    opts.MaxStderr,
-		RedactOutput: true,
-	})
-	if err != nil {
-		return failureObservation("ssh_effective_config", "sshd", started, effectiveCommandClass(err), "sshd effective config failed")
-	}
-	actual, err := ParseEffectiveConfig(result.Stdout)
-	if err != nil {
-		return failureObservation("ssh_effective_config", "sshd", started, resources.ErrorParse, err.Error())
-	}
 	expected := expectedDirectiveMap(opts.Expected)
 	var metrics []resources.Metric
 	matches := 0
-	fields := map[string]string{}
-	for _, directive := range expectedDirectives {
-		want := expected[directive]
-		got := actual[directive]
-		match := want != "" && got == want
-		if match {
-			matches++
-		}
-		metric, err := resources.NewMetric("pooly_ssh_directive_expected_match", boolFloat(match), resources.MetricGauge, "state", map[string]string{"directive": directive}, started.UTC())
+	fields := map[string]string{
+		"profiles": "poolyadmin,admin2,root",
+	}
+	for _, profile := range effectiveProfiles {
+		result, err := opts.Runner.Run(ctx, command.CommandSpec{
+			Path:         opts.SSHDPath,
+			Args:         effectiveContextArgs(profile, opts.Expected),
+			Timeout:      opts.Timeout,
+			MaxStdout:    opts.MaxStdout,
+			MaxStderr:    opts.MaxStderr,
+			RedactOutput: true,
+		})
 		if err != nil {
-			return failureObservation("ssh_effective_config", "sshd", started, resources.ErrorInternal, err.Error())
+			return failureObservation("ssh_effective_config", "sshd", started, effectiveCommandClass(err), "sshd effective config command failed for profile "+profile.Label)
 		}
-		metrics = append(metrics, metric)
-		fields[directive+"_expected"] = want
-		if got == "" {
-			fields[directive+"_actual"] = "missing"
-		} else {
-			fields[directive+"_actual"] = got
+		actual, err := ParseEffectiveConfig(result.Stdout)
+		if err != nil {
+			return failureObservation("ssh_effective_config", "sshd", started, resources.ErrorParse, "sshd effective config output malformed for profile "+profile.Label+": "+err.Error())
+		}
+		for _, directive := range expectedDirectives {
+			want := expected[directive]
+			got := actual[directive]
+			match := want != "" && got == want
+			if match {
+				matches++
+			}
+			metric, err := resources.NewMetric("pooly_ssh_directive_expected_match", boolFloat(match), resources.MetricGauge, "state", map[string]string{"directive": directive, "profile": profile.Label}, started.UTC())
+			if err != nil {
+				return failureObservation("ssh_effective_config", "sshd", started, resources.ErrorInternal, err.Error())
+			}
+			metrics = append(metrics, metric)
+			fieldPrefix := profile.Label + "_" + directive
+			fields[fieldPrefix+"_expected"] = want
+			if got == "" {
+				fields[fieldPrefix+"_actual"] = "missing"
+			} else {
+				fields[fieldPrefix+"_actual"] = got
+			}
 		}
 	}
 	obs := successObservation("ssh_effective_config", "sshd", started, metrics, "sshd effective config collected")

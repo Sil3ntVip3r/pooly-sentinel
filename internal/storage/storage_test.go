@@ -548,6 +548,70 @@ func TestEvidenceWriterJSONAndSymlinkDirectoryRejection(t *testing.T) {
 	}
 }
 
+func TestSQLiteAndJSONLRejectSymlinkFiles(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.db")
+	if err := os.WriteFile(target, []byte("not sqlite"), FileMode); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	dbLink := filepath.Join(root, "state.db")
+	if err := os.Symlink(target, dbLink); err != nil {
+		t.Skipf("symlink unavailable on this platform: %v", err)
+	}
+	if _, err := Open(context.Background(), testSQLiteOptions(dbLink)); err == nil {
+		t.Fatal("Open() symlink database error = nil")
+	}
+
+	eventTarget := filepath.Join(root, "events-target.jsonl")
+	if err := os.WriteFile(eventTarget, []byte(""), FileMode); err != nil {
+		t.Fatalf("write event target: %v", err)
+	}
+	eventLink := filepath.Join(root, "events.jsonl")
+	if err := os.Symlink(eventTarget, eventLink); err != nil {
+		t.Fatalf("event symlink: %v", err)
+	}
+	if _, err := OpenEventWriter(context.Background(), EventWriterOptions{Path: eventLink}); err == nil {
+		t.Fatal("OpenEventWriter() symlink event file error = nil")
+	}
+}
+
+func TestAtomicWriteReturnsDirectorySyncError(t *testing.T) {
+	oldSyncDir := syncDirFunc
+	syncDirFunc = func(string) error { return errors.New("sync dir failed") }
+	defer func() { syncDirFunc = oldSyncDir }()
+
+	err := atomicWriteFile(context.Background(), filepath.Join(t.TempDir(), "state", "current.json"), []byte("{}\n"))
+	if err == nil || !strings.Contains(err.Error(), "sync dir failed") {
+		t.Fatalf("atomicWriteFile() error = %v, want sync dir failure", err)
+	}
+}
+
+func TestSafeEvidencePath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "logs")
+	inside := filepath.Join(root, "incidents", "open", "id", "evidence.v1.json")
+	cases := []struct {
+		name string
+		path string
+		root string
+		want string
+	}{
+		{name: "relative dotted filename", path: "incidents/open/id/evidence.v1.json", root: root, want: filepath.Join("incidents", "open", "id", "evidence.v1.json")},
+		{name: "absolute inside root", path: inside, root: root, want: filepath.Join("incidents", "open", "id", "evidence.v1.json")},
+		{name: "url rejected", path: "https://example.test/evidence.json", root: root},
+		{name: "traversal rejected", path: "incidents/open/../secret.json", root: root},
+		{name: "control rejected", path: "incidents/open/id/bad\nname.json", root: root},
+		{name: "redacted rejected", path: "incidents/open/id/token=supersecret.json", root: root},
+		{name: "absolute outside root rejected", path: filepath.Join(t.TempDir(), "other", "evidence.json"), root: root},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SafeEvidencePath(tc.path, tc.root); got != tc.want {
+				t.Fatalf("SafeEvidencePath() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDoctorUsesTemporaryDiagnostics(t *testing.T) {
 	stateDir := filepath.Join(t.TempDir(), "state")
 	logDir := filepath.Join(t.TempDir(), "logs")

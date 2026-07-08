@@ -13,9 +13,10 @@ import (
 )
 
 type Options struct {
-	Enabled   bool
-	DryRun    bool
-	Receivers []ReceiverSpec
+	Enabled      bool
+	DryRun       bool
+	Receivers    []ReceiverSpec
+	EvidenceRoot string
 }
 
 type EnvLookup func(string) (string, bool)
@@ -25,8 +26,9 @@ func OptionsFromConfig(cfg config.Config, env EnvLookup) (Options, error) {
 		env = func(string) (string, bool) { return "", false }
 	}
 	opts := Options{
-		Enabled: cfg.Notify.Enabled,
-		DryRun:  cfg.Notify.DryRun,
+		Enabled:      cfg.Notify.Enabled,
+		DryRun:       cfg.Notify.DryRun,
+		EvidenceRoot: cfg.Storage.LogDir,
 	}
 	for _, receiver := range cfg.Notify.Receivers {
 		spec := ReceiverSpec{

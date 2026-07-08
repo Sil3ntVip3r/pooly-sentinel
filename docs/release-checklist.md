@@ -1,6 +1,14 @@
 # Release Checklist
 
-Step 10 adds a local release-check script for controlled alpha readiness:
+Step 11 release checks require a preinstalled `govulncheck`. The script fails with an install instruction if it is missing and does not auto-install tools.
+
+Install hint:
+
+```bash
+go install golang.org/x/vuln/cmd/govulncheck@latest
+```
+
+Run:
 
 ```bash
 scripts/check-release.sh
@@ -12,6 +20,7 @@ The script runs:
 - `go mod tidy`
 - `git diff --check`
 - `go vet ./...`
+- `govulncheck ./...`
 - `go test ./...`
 - `go test -race ./...`
 - `go test -cover ./...`
@@ -21,7 +30,7 @@ The script runs:
 - secret-pattern scan
 - local end-to-end dry-run
 
-The script does not require root, live systemd, external network access, production state paths, production log paths, or real notification receivers. If a fresh Go module cache is empty, `go mod tidy` may need the normal module cache already populated.
+The script does not require root, live systemd, external network access, production state paths, production log paths, or real notification receivers. It expects Go module dependencies and `govulncheck` to already be available locally.
 
 Before tagging an alpha:
 

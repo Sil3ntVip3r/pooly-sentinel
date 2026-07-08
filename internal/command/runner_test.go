@@ -5,7 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -77,6 +82,36 @@ func TestRunMissingExecutable(t *testing.T) {
 	if result.ErrorClass != ErrorClassMissingExecutable {
 		t.Fatalf("class = %q, want %q; error=%v", result.ErrorClass, ErrorClassMissingExecutable, err)
 	}
+}
+
+func TestRunTimeoutKillsChildProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process-group signaling is Unix-specific")
+	}
+	pidFile := filepath.Join(t.TempDir(), "child.pid")
+	t.Setenv("POOLY_SENTINEL_CHILD_PID_FILE", pidFile)
+	spec := helperSpec("spawnchild")
+	spec.Timeout = 150 * time.Millisecond
+	result, err := Run(context.Background(), spec)
+	if err == nil || result.ErrorClass != ErrorClassTimeout {
+		t.Fatalf("Run() = class %q err %v, want timeout", result.ErrorClass, err)
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("child pid was not recorded: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatalf("child pid %q invalid: %v", data, err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !processExists(pid) {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("child process %d still exists after timeout", pid)
 }
 
 func TestRunCancellation(t *testing.T) {
@@ -151,6 +186,21 @@ func TestCommandHelperProcess(t *testing.T) {
 		os.Exit(7)
 	case "slow":
 		time.Sleep(2 * time.Second)
+	case "spawnchild":
+		child := exec.Command(os.Args[0], "-test.run=TestCommandHelperProcess", "--", "holdpipe")
+		child.Env = append(os.Environ(), "POOLY_SENTINEL_COMMAND_HELPER=1")
+		child.Stdout = os.Stdout
+		child.Stderr = os.Stderr
+		if err := child.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "start child: %v\n", err)
+			os.Exit(98)
+		}
+		if pidFile := os.Getenv("POOLY_SENTINEL_CHILD_PID_FILE"); pidFile != "" {
+			_ = os.WriteFile(pidFile, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+		}
+		time.Sleep(2 * time.Second)
+	case "holdpipe":
+		time.Sleep(10 * time.Second)
 	case "spamout":
 		for i := 0; i < 1024; i++ {
 			fmt.Fprint(os.Stdout, "0123456789")
@@ -164,6 +214,11 @@ func TestCommandHelperProcess(t *testing.T) {
 		os.Exit(99)
 	}
 	os.Exit(0)
+}
+
+func processExists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil
 }
 
 func fakeDiscordWebhook() string {

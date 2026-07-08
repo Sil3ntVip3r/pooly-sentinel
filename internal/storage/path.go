@@ -2,9 +2,13 @@ package storage
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/Sil3ntVip3r/pooly-sentinel/internal/redaction"
 )
 
 func ensureDir(path string) error {
@@ -15,6 +19,74 @@ func ensureDir(path string) error {
 		return err
 	}
 	return nil
+}
+
+func rejectUnsafeExistingFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("path is a symlink: %s", path)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("path is not a regular file: %s", path)
+	}
+	return nil
+}
+
+func SafeEvidencePath(path string, root string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || strings.Contains(path, redaction.Replacement) || redaction.Redact(path) != path || containsControl(path) {
+		return ""
+	}
+	if parsed, err := url.Parse(path); err == nil && parsed.Scheme != "" {
+		return ""
+	}
+	toClean := path
+	root = strings.TrimSpace(root)
+	if filepath.IsAbs(path) {
+		if root == "" || containsControl(root) {
+			return ""
+		}
+		cleanRoot := filepath.Clean(root)
+		cleanPath := filepath.Clean(path)
+		rel, err := filepath.Rel(cleanRoot, cleanPath)
+		if err != nil || rel == "." || relEscapes(rel) {
+			return ""
+		}
+		toClean = rel
+	}
+	if relEscapes(toClean) {
+		return ""
+	}
+	clean := filepath.Clean(toClean)
+	if clean == "." || clean == ".." || filepath.IsAbs(clean) {
+		return ""
+	}
+	if relEscapes(clean) {
+		return ""
+	}
+	return clean
+}
+
+func relEscapes(rel string) bool {
+	if rel == ".." || filepath.IsAbs(rel) {
+		return true
+	}
+	return strings.HasPrefix(rel, ".."+string(filepath.Separator)) || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) || strings.HasSuffix(rel, string(filepath.Separator)+"..")
+}
+
+func containsControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func secureJoin(base string, parts ...string) (string, error) {
@@ -76,6 +148,14 @@ func sanitizeSegment(value string) (string, error) {
 	return out, nil
 }
 
+func allowedPlatformRootSymlink(path string) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	clean := filepath.Clean(path)
+	return clean == "/var" || clean == "/tmp"
+}
+
 func ensureDirNoSymlink(path string) error {
 	clean := filepath.Clean(path)
 	volume := filepath.VolumeName(clean)
@@ -94,6 +174,9 @@ func ensureDirNoSymlink(path string) error {
 		info, err := os.Lstat(current)
 		if err == nil {
 			if info.Mode()&os.ModeSymlink != 0 {
+				if allowedPlatformRootSymlink(current) {
+					continue
+				}
 				return fmt.Errorf("path contains symlink: %s", current)
 			}
 			if !info.IsDir() {
@@ -146,6 +229,9 @@ func ensureDirNoSymlinkUnder(base string, path string) error {
 		info, err := os.Lstat(current)
 		if err == nil {
 			if info.Mode()&os.ModeSymlink != 0 {
+				if allowedPlatformRootSymlink(current) {
+					continue
+				}
 				return fmt.Errorf("path contains symlink: %s", current)
 			}
 			if !info.IsDir() {

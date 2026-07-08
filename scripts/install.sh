@@ -68,6 +68,46 @@ need_value() {
   [[ -n "${value}" ]] || fail "${flag} requires a value"
 }
 
+trim_trailing_slashes() {
+  local value="$1"
+  while [[ "${value}" != "/" && "${value}" == */ ]]; do
+    value="${value%/}"
+  done
+  printf '%s' "${value}"
+}
+
+path_has_control_chars() {
+  local value="$1"
+  printf '%s' "${value}" | LC_ALL=C grep -q '[[:cntrl:]]'
+}
+
+is_dangerous_path() {
+  local value
+  value="$(trim_trailing_slashes "$1")"
+  case "${value}" in
+    /|/etc|/usr|/var|/bin|/sbin|/lib|/lib64)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+validate_absolute_path() {
+  local label="$1"
+  local value="$2"
+  [[ -n "${value}" ]] || fail "${label} must not be empty"
+  if path_has_control_chars "${value}"; then
+    fail "${label} must not contain control characters"
+  fi
+  case "${value}" in
+    /*) ;;
+    *) fail "${label} must be an absolute path" ;;
+  esac
+  if is_dangerous_path "${value}"; then
+    fail "${label} points at a dangerous broad system path: ${value}"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
@@ -95,6 +135,17 @@ SERVICE_SOURCE="${REPO_ROOT}/systemd/pooly-sentinel-agent.service"
 SERVICE_PATH="${SYSTEMD_DIR%/}/pooly-sentinel-agent.service"
 EXAMPLE_CONFIG="${REPO_ROOT}/docs/config.example.yaml"
 
+validate_absolute_path "--prefix" "${PREFIX}"
+validate_absolute_path "--binary" "${BINARY_SOURCE}"
+validate_absolute_path "--etc-dir" "${ETC_DIR}"
+validate_absolute_path "--state-dir" "${STATE_DIR}"
+validate_absolute_path "--log-dir" "${LOG_DIR}"
+validate_absolute_path "--systemd-dir" "${SYSTEMD_DIR}"
+validate_absolute_path "--config" "${CONFIG_PATH}"
+validate_absolute_path "environment path" "${ENV_PATH}"
+validate_absolute_path "binary target" "${BIN_PATH}"
+validate_absolute_path "service target" "${SERVICE_PATH}"
+
 [[ -f "${BINARY_SOURCE}" ]] || fail "built binary not found at ${BINARY_SOURCE}; run go build ./cmd/pooly-agent first"
 [[ -x "${BINARY_SOURCE}" ]] || fail "binary is not executable: ${BINARY_SOURCE}"
 [[ -f "${SERVICE_SOURCE}" ]] || fail "systemd service template missing: ${SERVICE_SOURCE}"
@@ -117,12 +168,10 @@ awk -v state="${STATE_DIR}" -v logdir="${LOG_DIR}" '
 
 INSTALL_SERVICE="${TMP_DIR}/pooly-sentinel-agent.service"
 awk -v bin="${BIN_PATH}" -v cfg="${CONFIG_PATH}" -v env="${ENV_PATH}" '
-  {
-    gsub("/usr/local/bin/pooly-agent", bin)
-    gsub("/etc/pooly-sentinel/config.yaml", cfg)
-    gsub("-/etc/pooly-sentinel/pooly-sentinel.env", "-" env)
-    print
-  }
+  /^EnvironmentFile=/ { print "EnvironmentFile=-" env; next }
+  /^ExecStartPre=/ { print "ExecStartPre=" bin " check config --config " cfg; next }
+  /^ExecStart=/ { print "ExecStart=" bin " run --config " cfg; next }
+  { print }
 ' "${SERVICE_SOURCE}" > "${INSTALL_SERVICE}"
 
 "${BINARY_SOURCE}" check config --config "${INSTALL_CONFIG}" >/dev/null || fail "example config failed validation"

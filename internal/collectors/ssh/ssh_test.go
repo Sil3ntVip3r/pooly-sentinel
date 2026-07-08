@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/collectors/platform"
@@ -74,8 +75,12 @@ func TestParseListeningPorts(t *testing.T) {
 }
 
 func TestCollectSSHConfigAndPorts(t *testing.T) {
+	matching := "permitrootlogin no\npasswordauthentication no\nkbdinteractiveauthentication no\npermitemptypasswords no\npubkeyauthentication yes\nstrictmodes yes\npermituserenvironment no\n"
+	drifted := "permitrootlogin no\npasswordauthentication yes\nkbdinteractiveauthentication no\npermitemptypasswords no\npubkeyauthentication yes\nstrictmodes yes\npermituserenvironment no\n"
 	runner := &fakeRunner{results: []command.Result{
-		{Stdout: "permitrootlogin no\npasswordauthentication yes\nkbdinteractiveauthentication no\npermitemptypasswords no\npubkeyauthentication yes\nstrictmodes yes\npermituserenvironment no\n"},
+		{Stdout: matching},
+		{Stdout: drifted},
+		{Stdout: matching},
 		{Stdout: "LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\nLISTEN 0 128 [::]:6200 [::]:*\n"},
 	}}
 	obs := Collect(context.Background(), Options{
@@ -86,11 +91,39 @@ func TestCollectSSHConfigAndPorts(t *testing.T) {
 	if len(obs) != 2 || !obs[0].Success || !obs[1].Success {
 		t.Fatalf("obs = %+v", obs)
 	}
-	if got := obs[0].Fields["passwordauthentication_actual"]; got != "yes" {
-		t.Fatalf("actual passwordauthentication = %q", got)
+	if got := obs[0].Fields["admin2_passwordauthentication_actual"]; got != "yes" {
+		t.Fatalf("admin2 passwordauthentication = %q", got)
 	}
-	if runner.specs[0].Args[0] != "-T" || runner.specs[1].Args[0] != "-H" {
-		t.Fatalf("unexpected command args: %#v", runner.specs)
+	if got := obs[0].Fields["matched_directives"]; got != "20" {
+		t.Fatalf("matched_directives = %q, want 20", got)
+	}
+	if len(obs[0].Metrics) != len(expectedDirectives)*len(effectiveProfiles) {
+		t.Fatalf("effective metrics = %d", len(obs[0].Metrics))
+	}
+	profiles := map[string]bool{}
+	var foundDrift bool
+	for _, metric := range obs[0].Metrics {
+		profiles[metric.Labels["profile"]] = true
+		if metric.Labels["profile"] == "admin2" && metric.Labels["directive"] == "passwordauthentication" && metric.Value == 0 {
+			foundDrift = true
+		}
+	}
+	for _, profile := range []string{"poolyadmin", "admin2", "root"} {
+		if !profiles[profile] {
+			t.Fatalf("profile %q missing from metrics: %+v", profile, obs[0].Metrics)
+		}
+	}
+	if !foundDrift {
+		t.Fatal("admin2 passwordauthentication drift metric not found")
+	}
+	for i, wantUser := range []string{"user=poolyadmin", "user=pooly-sil3ntvip3r-admin", "user=root"} {
+		joined := strings.Join(runner.specs[i].Args, " ")
+		if runner.specs[i].Args[0] != "-T" || !strings.Contains(joined, wantUser) || !strings.Contains(joined, "laddr=127.0.0.1") || !strings.Contains(joined, "lport=6200") {
+			t.Fatalf("effective args[%d] = %#v", i, runner.specs[i].Args)
+		}
+	}
+	if runner.specs[3].Args[0] != "-H" {
+		t.Fatalf("unexpected port command args: %#v", runner.specs[3])
 	}
 }
 
@@ -118,6 +151,7 @@ func TestCollectSSHCommandErrorClasses(t *testing.T) {
 		{name: "missing executable", err: &command.CommandError{Class: command.ErrorClassMissingExecutable, Err: errors.New("missing")}, want: resources.ErrorSourceMissing},
 		{name: "syntax failure", err: &command.CommandError{Class: command.ErrorClassNonZeroExit, Err: errors.New("bad config")}, want: resources.ErrorParse},
 		{name: "permission", err: &command.CommandError{Class: command.ErrorClassNonZeroExit, Stderr: "Permission denied", Err: errors.New("permission")}, want: resources.ErrorPermissionDenied},
+		{name: "output limit", err: &command.CommandError{Class: command.ErrorClassOutputLimit, Err: errors.New("limit")}, want: resources.ErrorParse},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

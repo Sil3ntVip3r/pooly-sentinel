@@ -15,6 +15,7 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 	notifier := &fakeNotifier{api: api, readyCh: make(chan struct{})}
 	store := &fakeStore{}
 	watchdogStarted := make(chan struct{})
+	watchdogExited := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
 		done <- RunInfrastructure(ctx, RuntimeOptions{
@@ -27,6 +28,7 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 			RunWatchdog: func(ctx context.Context) {
 				close(watchdogStarted)
 				<-ctx.Done()
+				close(watchdogExited)
 			},
 		})
 	}()
@@ -61,6 +63,11 @@ func TestRunInfrastructureReadinessAndShutdown(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("RunInfrastructure did not shut down")
+	}
+	select {
+	case <-watchdogExited:
+	default:
+		t.Fatal("watchdog goroutine had not exited before shutdown completed")
 	}
 	if !api.shutdown || !store.closed || !notifier.stopping || !scheduler.stopped {
 		t.Fatalf("shutdown state api=%t store=%t stopping=%t scheduler=%t", api.shutdown, store.closed, notifier.stopping, scheduler.stopped)

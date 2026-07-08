@@ -930,6 +930,7 @@ func apiOptionsFromConfig(cfg config.Config, store api.Store, schedulerStatus fu
 		Store:            store,
 		Reports:          reportsOptionsFromConfig(cfg, schedulerStatus),
 		SchedulerStatus:  schedulerStatus,
+		EvidenceRoot:     cfg.Storage.LogDir,
 	}
 }
 

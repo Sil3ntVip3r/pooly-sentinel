@@ -36,7 +36,7 @@ else
   printf '%s\n' "PASS no tracked raw .env files"
 fi
 
-scan_pattern "Discord webhook URL literals" 'https://(canary\.)?discord(app)?\.com/api/webhooks/[A-Za-z0-9_./-]+' \
+scan_pattern "Discord webhook URL literals" 'https://((canary|ptb)\.)?discord(app)?\.com/api/webhooks/[A-Za-z0-9_./-]+' \
   '*.go' '*.md' '*.yaml' '*.yml' '*.sh' 'systemd/*'
 
 scan_pattern "Authorization Bearer literals" 'Authorization:[[:space:]]*Bearer[[:space:]]+[A-Za-z0-9._~+/-]+' \

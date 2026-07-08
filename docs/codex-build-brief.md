@@ -56,4 +56,6 @@ Step 9 implements the disabled-by-default production monitoring scheduler and ag
 
 Step 10 implements alpha hardening and release readiness: hardened install/uninstall helpers, alpha systemd service finalization, release-check and local dry-run scripts, secret-pattern scanning, doctor enhancements, and install/rollback/security documentation.
 
-Report delivery, remediation, updating, public API serving, dashboards, new collectors, new notification receivers, remote fleet hub, and Pooly Server Guard modifications remain intentionally unimplemented.
+Step 11 implements security hardening and alpha acceptance fixes only: no-follow webhook redirects, stricter journald cursor behavior, SSH effective-config Match profile coverage, no-follow state/log file opens, command timeout process-group cleanup, API serve-error status reporting, govulncheck release checks, installer/uninstaller path validation, expanded redaction, atomic directory sync error returns, watchdog goroutine shutdown joins, and shared evidence path safety.
+
+Report delivery, remediation, updating, public API serving, dashboards, broad new collectors, new notification receivers, remote fleet hub, real deployment, and Pooly Server Guard modifications remain intentionally unimplemented.

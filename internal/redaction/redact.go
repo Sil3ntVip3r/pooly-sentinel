@@ -15,6 +15,7 @@ func Redact(s string) string {
 
 	out := privateKeyPattern.ReplaceAllString(s, Replacement)
 	out = discordWebhookPattern.ReplaceAllString(out, Replacement)
+	out = genericWebhookTokenURLPattern.ReplaceAllString(out, Replacement)
 	out = authorizedKeyPattern.ReplaceAllString(out, Replacement)
 	out = authorizationPattern.ReplaceAllString(out, "${1}"+Replacement)
 	out = querySecretPattern.ReplaceAllString(out, "${1}"+Replacement)

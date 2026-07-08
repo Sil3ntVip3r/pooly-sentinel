@@ -4,7 +4,7 @@ Pooly Sentinel is the planned Go-based replacement path for the current Bash-bas
 
 ## Current Status
 
-Step 10 adds alpha hardening, install/service integration, release checks, and local end-to-end dry-run validation on top of the Step 9 disabled-by-default scheduler.
+Step 11 adds security hardening and alpha acceptance fixes on top of the Step 10 install/service and release-readiness baseline.
 
 - Go module: `github.com/Sil3ntVip3r/pooly-sentinel`
 - Primary binary path: `cmd/pooly-agent`
@@ -21,8 +21,9 @@ Step 10 adds alpha hardening, install/service integration, release checks, and l
 - Local report preview summarizes existing storage only
 - `pooly-agent run` opens storage, optionally starts the localhost API and scheduler, sends truthful systemd readiness, and handles graceful shutdown
 - Scheduler status and dry-run one-shot cycle commands are available
-- Hardened install/uninstall helpers, release checks, secret scanning, and local dry-run validation are available
-- The scheduler is disabled by default; report delivery, remediation, updating, public API exposure, and dashboards are not implemented
+- Hardened install/uninstall helpers, release checks with `govulncheck`, secret scanning, local dry-run validation, no-follow state/log file handling, and watchdog shutdown joins are available
+- Generic webhooks do not follow redirects; redirect responses are delivery failures and redirect targets are not included in summaries
+- The scheduler is disabled by default; report delivery, remediation, updating, public API exposure, new notification receivers, broad new collectors, and dashboards are not implemented
 
 The current `pooly-agent` entrypoint supports safe one-shot manual collector runs, rule validation, fixture-based rule tests, local incident inspection, notification diagnostics, API config checks, report preview, scheduler status/run-once diagnostics, doctor checks, and run lifecycle wiring. `run` starts scheduled collection only when `agent.scheduler.enabled` is explicitly true.
 
@@ -92,6 +93,9 @@ Alpha release checks:
 scripts/check-release.sh
 scripts/local-dry-run.sh --binary ./pooly-agent
 scripts/scan-secrets.sh
+
+# check-release requires a preinstalled govulncheck:
+# go install golang.org/x/vuln/cmd/govulncheck@latest
 ```
 
 Install preview:

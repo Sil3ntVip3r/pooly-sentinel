@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +43,7 @@ type Options struct {
 	Store            Store
 	Reports          reports.Options
 	SchedulerStatus  func() agent.SchedulerStatus
+	EvidenceRoot     string
 	Listener         net.Listener
 	Now              func() time.Time
 }
@@ -53,6 +53,7 @@ type Server struct {
 	server   *http.Server
 	listener net.Listener
 	ready    atomic.Bool
+	serveErr atomic.Value
 	mu       sync.Mutex
 }
 
@@ -112,10 +113,11 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}
 	s.listener = listener
+	s.serveErr.Store("")
 	go func() {
 		err := s.server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			// The run lifecycle owns logging; endpoint behavior stays read-only.
+			s.recordServeError(err)
 		}
 	}()
 	return nil
@@ -143,6 +145,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("api shutdown: %w", redaction.Error(err))
 	}
 	return nil
+}
+
+func (s *Server) recordServeError(err error) {
+	if s == nil {
+		return
+	}
+	s.SetReady(false)
+	s.serveErr.Store(redaction.Redact(err.Error()))
+}
+
+func (s *Server) serveError() string {
+	if s == nil {
+		return ""
+	}
+	value := s.serveErr.Load()
+	if value == nil {
+		return ""
+	}
+	text, _ := value.(string)
+	return redaction.Redact(text)
 }
 
 func (s *Server) SetReady(ready bool) {
@@ -237,7 +259,7 @@ func (s *Server) handleIncidents(w http.ResponseWriter, r *http.Request) {
 	}
 	output := make([]IncidentResponse, 0, len(records))
 	for _, record := range records {
-		output = append(output, safeIncident(record))
+		output = append(output, safeIncident(record, s.opts.EvidenceRoot))
 	}
 	writeJSON(w, http.StatusOK, output)
 }
@@ -263,7 +285,7 @@ func (s *Server) handleIncident(w http.ResponseWriter, r *http.Request) {
 		writeStorageError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, safeIncident(record))
+	writeJSON(w, http.StatusOK, safeIncident(record, s.opts.EvidenceRoot))
 }
 
 func (s *Server) handleDeliveries(w http.ResponseWriter, r *http.Request) {
@@ -316,33 +338,31 @@ func (s *Server) status(ctx context.Context) StatusResponse {
 	if s.opts.SchedulerStatus != nil {
 		response.Scheduler = agent.SafeSchedulerStatus(s.opts.SchedulerStatus())
 	}
+	if serveErr := s.serveError(); serveErr != "" {
+		response.ServiceStatus = "degraded"
+		response.Readiness = false
+		response.ErrorClass = "api_serve"
+		response.ErrorSummary = serveErr
+	}
 	store := s.opts.Store
 	if store == nil {
-		response.ServiceStatus = "degraded"
-		response.ErrorClass = "storage"
-		response.ErrorSummary = "storage is unavailable"
+		setStatusError(&response, "storage", "storage is unavailable")
 		return response
 	}
 	if err := store.Ping(ctx); err != nil {
-		response.ServiceStatus = "degraded"
-		response.ErrorClass = "storage"
-		response.ErrorSummary = redaction.Redact(err.Error())
+		setStatusError(&response, "storage", redaction.Redact(err.Error()))
 		return response
 	}
 	response.StorageAvailable = true
 	version, err := store.SchemaVersion(ctx)
 	if err != nil {
-		response.ServiceStatus = "degraded"
-		response.ErrorClass = "storage"
-		response.ErrorSummary = redaction.Redact(err.Error())
+		setStatusError(&response, "storage", redaction.Redact(err.Error()))
 		return response
 	}
 	response.SchemaVersion = version
 	incidentCounts, err := store.IncidentStatusCounts(ctx)
 	if err != nil {
-		response.ServiceStatus = "degraded"
-		response.ErrorClass = "storage"
-		response.ErrorSummary = redaction.Redact(err.Error())
+		setStatusError(&response, "storage", redaction.Redact(err.Error()))
 		return response
 	}
 	response.IncidentCounts = redactCountMap(incidentCounts)
@@ -350,9 +370,7 @@ func (s *Server) status(ctx context.Context) StatusResponse {
 	response.ResolvedIncidentCount = incidentCounts["resolved"]
 	deliveryCounts, err := store.NotificationDeliveryStatusCounts(ctx)
 	if err != nil {
-		response.ServiceStatus = "degraded"
-		response.ErrorClass = "storage"
-		response.ErrorSummary = redaction.Redact(err.Error())
+		setStatusError(&response, "storage", redaction.Redact(err.Error()))
 		return response
 	}
 	response.DeliveryCounts = redactCountMap(deliveryCounts)
@@ -413,11 +431,26 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json")
+	data, err := json.Marshal(value)
+	if err != nil {
+		status = http.StatusInternalServerError
+		data, _ = json.Marshal(ErrorResponse{Error: "json response could not be encoded"})
+	}
+	header := w.Header()
+	header.Set("Content-Type", "application/json")
+	header.Set("Cache-Control", "no-store")
+	header.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	encoder := json.NewEncoder(w)
-	encoder.SetEscapeHTML(true)
-	_ = encoder.Encode(value)
+	_, _ = w.Write(append(data, '\n'))
+}
+
+func setStatusError(response *StatusResponse, class string, summary string) {
+	if response == nil || response.ErrorClass != "" {
+		return
+	}
+	response.ServiceStatus = "degraded"
+	response.ErrorClass = redaction.Redact(class)
+	response.ErrorSummary = redaction.Redact(summary)
 }
 
 func redactCountMap(input map[string]int64) map[string]int64 {
@@ -426,17 +459,6 @@ func redactCountMap(input map[string]int64) map[string]int64 {
 		output[redaction.Redact(key)] = value
 	}
 	return output
-}
-
-func safeEvidencePath(path string) string {
-	if path == "" || redaction.Redact(path) != path || strings.ContainsAny(path, "\x00\r\n") {
-		return ""
-	}
-	clean := filepath.Clean(path)
-	if clean == "." || strings.Contains(clean, "..") {
-		return ""
-	}
-	return clean
 }
 
 type reportStore struct {

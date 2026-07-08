@@ -36,10 +36,10 @@ func OpenEventWriter(ctx context.Context, opts EventWriterOptions) (*EventWriter
 	if err := ctx.Err(); err != nil {
 		return nil, wrapError("open event writer", ErrorClassWrite, err)
 	}
-	if err := ensureDir(filepath.Dir(opts.Path)); err != nil {
+	if err := ensureDirNoSymlink(filepath.Dir(opts.Path)); err != nil {
 		return nil, wrapError("open event writer mkdir", ErrorClassWrite, err)
 	}
-	file, err := os.OpenFile(opts.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, FileMode)
+	file, err := openRegularNoFollow(opts.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, FileMode)
 	if err != nil {
 		return nil, wrapError("open event writer", ErrorClassWrite, err)
 	}

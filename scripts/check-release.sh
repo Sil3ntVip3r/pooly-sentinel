@@ -17,6 +17,19 @@ run() {
   "$@"
 }
 
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+require_govulncheck() {
+  if ! command -v govulncheck >/dev/null 2>&1; then
+    fail "govulncheck is required; install it with: go install golang.org/x/vuln/cmd/govulncheck@latest"
+  fi
+}
+
+require_govulncheck
+
 TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "${TMP_DIR}"
@@ -45,6 +58,7 @@ run go fmt ./...
 run go mod tidy
 run git diff --check
 run go vet ./...
+run govulncheck ./...
 run go test ./...
 run go test -race ./...
 run go test -cover ./...

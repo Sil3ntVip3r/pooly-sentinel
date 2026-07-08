@@ -73,6 +73,75 @@ need_value() {
   [[ -n "${value}" ]] || fail "${flag} requires a value"
 }
 
+trim_trailing_slashes() {
+  local value="$1"
+  while [[ "${value}" != "/" && "${value}" == */ ]]; do
+    value="${value%/}"
+  done
+  printf '%s' "${value}"
+}
+
+path_has_control_chars() {
+  local value="$1"
+  printf '%s' "${value}" | LC_ALL=C grep -q '[[:cntrl:]]'
+}
+
+is_dangerous_path() {
+  local value
+  value="$(trim_trailing_slashes "$1")"
+  case "${value}" in
+    /|/etc|/usr|/var|/bin|/sbin|/lib|/lib64)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+validate_absolute_path() {
+  local label="$1"
+  local value="$2"
+  [[ -n "${value}" ]] || fail "${label} must not be empty"
+  if path_has_control_chars "${value}"; then
+    fail "${label} must not contain control characters"
+  fi
+  case "${value}" in
+    /*) ;;
+    *) fail "${label} must be an absolute path" ;;
+  esac
+  if is_dangerous_path "${value}"; then
+    fail "${label} points at a dangerous broad system path: ${value}"
+  fi
+}
+
+path_depth() {
+  local value
+  value="$(trim_trailing_slashes "$1")"
+  value="${value#/}"
+  local count=0
+  local part
+  IFS='/' read -r -a parts <<< "${value}"
+  for part in "${parts[@]}"; do
+    [[ -n "${part}" ]] && count=$((count + 1))
+  done
+  printf '%s' "${count}"
+}
+
+validate_purge_path() {
+  local label="$1"
+  local value="$2"
+  validate_absolute_path "${label}" "${value}"
+  local trimmed
+  trimmed="$(trim_trailing_slashes "${value}")"
+  case "${trimmed}" in
+    /var/log|/var/lib|/etc/pooly-sentinel|/etc/systemd|/usr/local)
+      fail "${label} is too broad to purge safely: ${value}"
+      ;;
+  esac
+  if [[ "$(path_depth "${value}")" -lt 3 ]]; then
+    fail "${label} is too shallow to purge safely: ${value}"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
@@ -100,6 +169,23 @@ BIN_PATH="${PREFIX%/}/bin/pooly-agent"
 SERVICE_PATH="${SYSTEMD_DIR%/}/pooly-sentinel-agent.service"
 CONFIG_PATH="${CONFIG_PATH:-${ETC_DIR%/}/config.yaml}"
 ENV_PATH="${ETC_DIR%/}/pooly-sentinel.env"
+
+validate_absolute_path "--prefix" "${PREFIX}"
+validate_absolute_path "--etc-dir" "${ETC_DIR}"
+validate_absolute_path "--state-dir" "${STATE_DIR}"
+validate_absolute_path "--log-dir" "${LOG_DIR}"
+validate_absolute_path "--systemd-dir" "${SYSTEMD_DIR}"
+validate_absolute_path "--config" "${CONFIG_PATH}"
+validate_absolute_path "environment path" "${ENV_PATH}"
+validate_absolute_path "binary target" "${BIN_PATH}"
+validate_absolute_path "service target" "${SERVICE_PATH}"
+
+if [[ "${PURGE_STATE}" -eq 1 ]]; then
+  validate_purge_path "--state-dir" "${STATE_DIR}"
+fi
+if [[ "${PURGE_LOGS}" -eq 1 ]]; then
+  validate_purge_path "--log-dir" "${LOG_DIR}"
+fi
 
 if [[ "${PURGE_STATE}" -eq 1 && "${CONFIRM_STATE}" -ne 1 ]]; then
   fail "--purge-state requires --confirm-purge-state"

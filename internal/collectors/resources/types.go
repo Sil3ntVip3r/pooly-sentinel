@@ -139,6 +139,7 @@ var allowedLabels = map[string]struct{}{
 	"stream":         {},
 	"directive":      {},
 	"port":           {},
+	"profile":        {},
 	"watch":          {},
 	"event_category": {},
 }

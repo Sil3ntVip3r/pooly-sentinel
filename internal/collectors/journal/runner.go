@@ -211,9 +211,11 @@ func streamObservation(stream string, started time.Time, records []Record, trunc
 }
 
 func journalArgs(stream StreamConfig, cursor string, lines int) []string {
-	args := []string{"--no-pager", "--output=json", "--lines=" + strconv.Itoa(lines)}
+	args := []string{"--no-pager", "--output=json"}
 	if cursor != "" {
 		args = append(args, "--after-cursor", cursor)
+	} else {
+		args = append(args, "--lines="+strconv.Itoa(lines))
 	}
 	switch stream.Name {
 	case "auth":

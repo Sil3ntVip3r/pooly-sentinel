@@ -49,7 +49,7 @@ func Open(ctx context.Context, opts SQLiteOptions) (*Store, error) {
 			return nil, wrapError("open", ErrorClassValidation, fmt.Errorf("database path must be absolute"))
 		}
 		if opts.CreateParentDirs {
-			if err := ensureDir(filepath.Dir(opts.Path)); err != nil {
+			if err := ensureDirNoSymlink(filepath.Dir(opts.Path)); err != nil {
 				return nil, wrapError("open mkdir", ErrorClassOpen, err)
 			}
 		}
@@ -199,7 +199,7 @@ func isMemoryDSN(path string) bool {
 }
 
 func prepareDatabaseFile(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, FileMode)
+	file, err := openRegularNoFollow(path, os.O_CREATE|os.O_RDWR, FileMode)
 	if err != nil {
 		return err
 	}

@@ -25,6 +25,21 @@ func TestRedact(t *testing.T) {
 			forbidden: []string{webhookHostPath("discordapp.com"), "abcDEF"},
 		},
 		{
+			name:      "discord canary webhook",
+			input:     "send to " + fakeDiscordWebhook("canary.discord.com", "1234567890", "abcDEF"),
+			forbidden: []string{webhookHostPath("canary.discord.com"), "abcDEF"},
+		},
+		{
+			name:      "discord ptb webhook",
+			input:     "send to " + fakeDiscordWebhook("ptb.discordapp.com", "1234567890", "abcDEF"),
+			forbidden: []string{webhookHostPath("ptb.discordapp.com"), "abcDEF"},
+		},
+		{
+			name:      "generic webhook token URL",
+			input:     "send to https://hooks.example.test/webhook/channel01/abcdefghijklmnopqrstuvwxyz",
+			forbidden: []string{"hooks.example.test", "abcdefghijklmnopqrstuvwxyz"},
+		},
+		{
 			name:      "authorization bearer",
 			input:     "Authorization: " + "Bearer " + "abc.def.ghi",
 			forbidden: []string{"abc.def.ghi"},
@@ -70,6 +85,12 @@ func TestRedact(t *testing.T) {
 			input:     "component=agent severity=warn duration=5s",
 			forbidden: []string{},
 			want:      "component=agent severity=warn duration=5s",
+		},
+		{
+			name:      "harmless webhook documentation URL stays safe",
+			input:     "see https://example.test/docs/webhook/setup for docs",
+			forbidden: []string{},
+			want:      "see https://example.test/docs/webhook/setup for docs",
 		},
 	}
 

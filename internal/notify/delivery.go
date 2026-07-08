@@ -12,20 +12,22 @@ import (
 )
 
 type Service struct {
-	Enabled   bool
-	DryRun    bool
-	Store     Store
-	Receivers []Receiver
-	Clock     Clock
+	Enabled      bool
+	DryRun       bool
+	Store        Store
+	Receivers    []Receiver
+	Clock        Clock
+	EvidenceRoot string
 }
 
 func NewService(opts Options, store Store, receivers []Receiver) Service {
 	return Service{
-		Enabled:   opts.Enabled,
-		DryRun:    opts.DryRun,
-		Store:     store,
-		Receivers: receivers,
-		Clock:     RealClock{},
+		Enabled:      opts.Enabled,
+		DryRun:       opts.DryRun,
+		Store:        store,
+		Receivers:    receivers,
+		Clock:        RealClock{},
+		EvidenceRoot: opts.EvidenceRoot,
 	}
 }
 
@@ -69,7 +71,7 @@ func (s Service) DeliverIncident(ctx context.Context, incident storage.IncidentR
 	if len(s.Receivers) == 0 {
 		return Report{Results: []DeliveryResult{{IncidentID: incident.ID, Event: event, Status: StatusSkipped, Summary: "no receivers configured"}}, Skipped: 1}, nil
 	}
-	payload := RenderPayload(incident, event)
+	payload := RenderPayloadWithEvidenceRoot(incident, event, s.EvidenceRoot)
 	severity := incidents.Severity(incident.Severity)
 	if event == EventResolved {
 		severity = incidents.SeverityNone

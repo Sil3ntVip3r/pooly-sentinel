@@ -67,6 +67,17 @@ func Run(ctx context.Context, spec CommandSpec) (Result, error) {
 	defer cancelRun()
 
 	cmd := exec.CommandContext(runCtx, resolvedPath, spec.Args...)
+	configureCommandProcess(cmd)
+	cmd.Cancel = func() error {
+		if err := terminateCommandProcessGroup(cmd); err == nil || errors.Is(err, os.ErrProcessDone) {
+			return err
+		}
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return cmd.Process.Kill()
+	}
+	cmd.WaitDelay = commandWaitDelay(spec.Timeout)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		result.ErrorClass = ErrorClassStartFailed
@@ -122,9 +133,22 @@ func Run(ctx context.Context, spec CommandSpec) (Result, error) {
 		result.ErrorClass = class
 		return result, commandError(result, class, result.ExitCode, result.Stderr, waitErr)
 	}
+	if err := timeoutCtx.Err(); err != nil {
+		class := classifyContextError(err)
+		result.ErrorClass = class
+		return result, commandError(result, class, result.ExitCode, result.Stderr, err)
+	}
 
 	result.ErrorClass = ErrorClassNone
 	return result, nil
+}
+
+func commandWaitDelay(timeout time.Duration) time.Duration {
+	defaultDelay := 2 * time.Second
+	if timeout > 0 && timeout < defaultDelay {
+		return timeout
+	}
+	return defaultDelay
 }
 
 func commandError(result Result, class ErrorClass, exitCode int, stderr string, err error) error {

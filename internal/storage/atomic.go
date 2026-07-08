@@ -19,7 +19,10 @@ func atomicWriteFile(ctx context.Context, path string, data []byte) error {
 		return fmt.Errorf("path is required")
 	}
 	dir := filepath.Dir(path)
-	if err := ensureDir(dir); err != nil {
+	if err := ensureDirNoSymlink(dir); err != nil {
+		return err
+	}
+	if err := rejectUnsafeExistingFile(path); err != nil {
 		return err
 	}
 	tmp, tmpPath, err := createAtomicTempFile(dir, filepath.Base(path))
@@ -51,9 +54,13 @@ func atomicWriteFile(ctx context.Context, path string, data []byte) error {
 		return err
 	}
 	cleanup = false
-	_ = syncDir(dir)
+	if err := syncDirFunc(dir); err != nil {
+		return err
+	}
 	return nil
 }
+
+var syncDirFunc = syncDir
 
 func createAtomicTempFile(dir string, base string) (*os.File, string, error) {
 	for i := 0; i < 100; i++ {

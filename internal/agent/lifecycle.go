@@ -112,8 +112,14 @@ func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 		}
 	}
 	watchdogCtx, cancelWatchdog := context.WithCancel(ctx)
+	var watchdogDone <-chan struct{}
 	if opts.WatchdogEnabled && opts.RunWatchdog != nil {
-		go opts.RunWatchdog(watchdogCtx)
+		done := make(chan struct{})
+		watchdogDone = done
+		go func() {
+			defer close(done)
+			opts.RunWatchdog(watchdogCtx)
+		}()
 	}
 	if opts.Logger != nil {
 		opts.Logger.InfoContext(ctx, "pooly-agent run infrastructure ready",
@@ -123,6 +129,7 @@ func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 	}
 	<-ctx.Done()
 	cancelWatchdog()
+	waitForWatchdog(watchdogDone, opts.ShutdownTimeout, opts.Logger)
 	if opts.API != nil {
 		opts.API.SetReady(false)
 	}
@@ -148,6 +155,27 @@ func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 		)
 	}
 	return shutdownErr
+}
+
+func waitForWatchdog(done <-chan struct{}, timeout time.Duration, logger *slog.Logger) {
+	if done == nil {
+		return
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		if logger != nil {
+			logger.Warn("systemd watchdog goroutine did not stop before timeout",
+				slog.String("component", "systemdnotify"),
+				slog.String("error_class", "timeout"),
+			)
+		}
+	}
 }
 
 func closeStore(store Store, logger *slog.Logger) error {

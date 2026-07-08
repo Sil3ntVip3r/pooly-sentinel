@@ -72,9 +72,17 @@ type WebhookReceiver struct {
 
 func NewWebhookReceiver(spec ReceiverSpec, client HTTPDoer) WebhookReceiver {
 	if client == nil {
-		client = &http.Client{}
+		client = noRedirectHTTPClient()
 	}
 	return WebhookReceiver{baseReceiver: baseReceiver{spec: spec}, client: client}
+}
+
+func noRedirectHTTPClient() *http.Client {
+	return &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 func (r WebhookReceiver) Deliver(ctx context.Context, payload Payload) DeliveryOutcome {
@@ -113,8 +121,10 @@ func (r WebhookReceiver) Deliver(ctx context.Context, payload Payload) DeliveryO
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		summary := fmt.Sprintf("webhook returned HTTP %d", resp.StatusCode)
-		if len(responseBody) > 0 {
-			summary += ": " + redaction.Redact(string(responseBody))
+		if resp.StatusCode < 300 || resp.StatusCode > 399 {
+			if len(responseBody) > 0 {
+				summary += ": " + redaction.Redact(string(responseBody))
+			}
 		}
 		if truncated {
 			summary += " (truncated)"
