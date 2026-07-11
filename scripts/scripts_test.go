@@ -192,6 +192,15 @@ func TestSystemdServiceHardening(t *testing.T) {
 		t.Fatalf("read service: %v", err)
 	}
 	text := string(data)
+	sections := parseUnitSections(t, text)
+	assertUnitDirective(t, sections, "Unit", "StartLimitIntervalSec", "10min")
+	assertUnitDirective(t, sections, "Unit", "StartLimitBurst", "5")
+	assertNoUnitDirective(t, sections, "Service", "StartLimitIntervalSec")
+	assertNoUnitDirective(t, sections, "Service", "StartLimitBurst")
+	assertUnitDirective(t, sections, "Service", "Type", "notify")
+	assertUnitDirective(t, sections, "Service", "WatchdogSec", "60s")
+	assertUnitDirective(t, sections, "Service", "Restart", "on-failure")
+
 	required := []string{
 		"Type=notify",
 		"NotifyAccess=main",
@@ -227,6 +236,68 @@ func TestSystemdServiceHardening(t *testing.T) {
 			t.Fatalf("service contains forbidden text %q", forbidden)
 		}
 	}
+}
+
+func parseUnitSections(t *testing.T, text string) map[string][]string {
+	t.Helper()
+	sections := map[string][]string{}
+	current := ""
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			current = strings.TrimSuffix(strings.TrimPrefix(line, "["), "]")
+			if current == "" {
+				t.Fatal("unit file contains empty section header")
+			}
+			if _, ok := sections[current]; !ok {
+				sections[current] = nil
+			}
+			continue
+		}
+		if current == "" {
+			t.Fatalf("unit directive outside a section: %q", line)
+		}
+		sections[current] = append(sections[current], line)
+	}
+	return sections
+}
+
+func assertUnitDirective(t *testing.T, sections map[string][]string, section string, key string, value string) {
+	t.Helper()
+	want := key + "=" + value
+	if got := countUnitDirective(sections, key); got != 1 {
+		t.Fatalf("unit directive %s count = %d, want exactly 1", key, got)
+	}
+	for _, line := range sections[section] {
+		if line == want {
+			return
+		}
+	}
+	t.Fatalf("unit section [%s] missing %s", section, want)
+}
+
+func assertNoUnitDirective(t *testing.T, sections map[string][]string, section string, key string) {
+	t.Helper()
+	for _, line := range sections[section] {
+		if strings.HasPrefix(line, key+"=") {
+			t.Fatalf("unit section [%s] unexpectedly contains %s", section, line)
+		}
+	}
+}
+
+func countUnitDirective(sections map[string][]string, key string) int {
+	count := 0
+	for _, lines := range sections {
+		for _, line := range lines {
+			if strings.HasPrefix(line, key+"=") {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func TestSecretScanHelper(t *testing.T) {

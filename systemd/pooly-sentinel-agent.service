@@ -3,6 +3,8 @@ Description=Pooly Sentinel Agent
 Documentation=https://github.com/Sil3ntVip3r/pooly-sentinel
 Wants=network-online.target
 After=network-online.target
+StartLimitIntervalSec=10min
+StartLimitBurst=5
 
 [Service]
 Type=notify
@@ -17,8 +19,6 @@ EnvironmentFile=-/etc/pooly-sentinel/pooly-sentinel.env
 
 Restart=on-failure
 RestartSec=5s
-StartLimitIntervalSec=10min
-StartLimitBurst=5
 
 WatchdogSec=60s
 TimeoutStartSec=30s
