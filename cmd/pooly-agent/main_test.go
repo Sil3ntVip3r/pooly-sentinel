@@ -64,6 +64,30 @@ func TestAPIAndReportsCLI(t *testing.T) {
 	}
 }
 
+func TestAPIServiceFromConfigDisabledReturnsNilInterface(t *testing.T) {
+	cfg := config.Config{}
+	service, err := apiServiceFromConfig(cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("apiServiceFromConfig() error = %v", err)
+	}
+	if service != nil {
+		t.Fatalf("apiServiceFromConfig() = %#v, want nil interface", service)
+	}
+}
+
+func TestAPIServiceFromConfigEnabledReturnsService(t *testing.T) {
+	cfg := config.Config{}
+	cfg.API.Enabled = true
+	cfg.API.Listen = "127.0.0.1:0"
+	service, err := apiServiceFromConfig(cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("apiServiceFromConfig() error = %v", err)
+	}
+	if service == nil {
+		t.Fatal("apiServiceFromConfig() = nil, want API service")
+	}
+}
+
 func TestSchedulerCLIStatusAndDryRun(t *testing.T) {
 	configPath := writeTempConfig(t)
 	if err := runCLI([]string{"scheduler", "status", "--config", configPath}); err != nil {

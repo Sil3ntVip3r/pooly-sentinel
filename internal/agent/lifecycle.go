@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -67,6 +68,8 @@ type RuntimeOptions struct {
 	RunWatchdog      func(ctx context.Context)
 }
 
+var errAPIAddressUnavailable = errors.New("api listener address unavailable after start")
+
 func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 	if ctx == nil {
 		return context.Canceled
@@ -82,10 +85,18 @@ func RunInfrastructure(ctx context.Context, opts RuntimeOptions) error {
 			closeStore(opts.Store, opts.Logger)
 			return err
 		}
+		addr := opts.API.Addr()
+		if addr == "" {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), opts.ShutdownTimeout)
+			shutdownErr := opts.API.Shutdown(shutdownCtx)
+			cancel()
+			closeErr := closeStore(opts.Store, opts.Logger)
+			return errors.Join(fmt.Errorf("api start: %w", errAPIAddressUnavailable), shutdownErr, closeErr)
+		}
 		if opts.Logger != nil {
 			opts.Logger.InfoContext(ctx, "api listening",
 				slog.String("component", "api"),
-				slog.String("addr", opts.API.Addr()),
+				slog.String("addr", addr),
 			)
 		}
 	}

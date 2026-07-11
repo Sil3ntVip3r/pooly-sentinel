@@ -561,13 +561,10 @@ func runCommand(args []string) error {
 		_ = store.Close()
 		return err
 	}
-	var apiServer *api.Server
-	if cfg.API.Enabled {
-		apiServer, err = api.NewServer(apiOptionsFromConfig(cfg, store, scheduler.Status))
-		if err != nil {
-			_ = store.Close()
-			return err
-		}
+	apiService, err := apiServiceFromConfig(cfg, store, scheduler.Status)
+	if err != nil {
+		_ = store.Close()
+		return err
 	}
 	var notifier agent.Notifier
 	var notifyClient systemdnotify.Client
@@ -589,7 +586,7 @@ func runCommand(args []string) error {
 	return agent.RunInfrastructure(ctx, agent.RuntimeOptions{
 		Logger:           logger,
 		Store:            store,
-		API:              apiServer,
+		API:              apiService,
 		Scheduler:        scheduler,
 		Notifier:         notifier,
 		ShutdownTimeout:  cfg.API.ShutdownTimeout.Duration,
@@ -917,6 +914,13 @@ func filewatchOptionsFromConfig(cfg config.Config, persist bool, store *storage.
 		})
 	}
 	return opts
+}
+
+func apiServiceFromConfig(cfg config.Config, store api.Store, schedulerStatus func() agent.SchedulerStatus) (agent.APIService, error) {
+	if !cfg.API.Enabled {
+		return nil, nil
+	}
+	return api.NewServer(apiOptionsFromConfig(cfg, store, schedulerStatus))
 }
 
 func apiOptionsFromConfig(cfg config.Config, store api.Store, schedulerStatus func() agent.SchedulerStatus) api.Options {
