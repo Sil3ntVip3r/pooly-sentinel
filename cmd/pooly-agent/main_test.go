@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/Sil3ntVip3r/pooly-sentinel/internal/agent"
@@ -74,6 +76,7 @@ func TestSchedulerCLIStatusAndDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
+	assertHermeticSchedulerFilesystemMounts(t, cfg)
 	dbPath := filepath.Join(cfg.Storage.StateDir, cfg.Storage.DatabaseFile)
 	if _, err := os.Stat(dbPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("dry-run touched configured database path err=%v", err)
@@ -91,8 +94,15 @@ func TestSchedulerCLIStatusAndDryRun(t *testing.T) {
 func writeTempConfig(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	stateDir := filepath.Join(dir, "state")
+	logDir := filepath.Join(dir, "logs")
+	for _, path := range []string{stateDir, logDir} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
 	configPath := filepath.Join(dir, "config.yaml")
-	data := []byte(`version: "1"
+	data := []byte(fmt.Sprintf(`version: "1"
 node:
   id: "001"
   name: "Node001 Toronto"
@@ -111,17 +121,81 @@ reports:
 logging:
   level: "info"
   format: "json"
+resources:
+  enabled: true
+  interval: 30s
+  timeout: 3s
+  cpu:
+    enabled: true
+  memory:
+    enabled: true
+  pressure:
+    enabled: true
+    missing_is_ok: true
+  filesystem:
+    enabled: true
+    mounts:
+      - %s
+      - %s
+      - %s
+      - %s
+  diskio:
+    enabled: true
+    auto_discover: true
+    exclude:
+      - loop*
+      - ram*
+      - fd*
+      - sr*
+  network:
+    enabled: true
+    auto_discover: true
+    include: []
+    exclude:
+      - lo
+      - docker*
+      - veth*
+      - br-*
+  uptime:
+    enabled: true
 receivers:
   - name: local_file
     type: file
     cost_class: free_core
     enabled: true
 storage:
-  state_dir: ` + dir + `
-  log_dir: ` + filepath.Join(dir, "logs") + `
-`)
+  state_dir: %s
+  log_dir: %s
+`, yamlString("/"), yamlString(dir), yamlString(stateDir), yamlString(logDir), yamlString(stateDir), yamlString(logDir)))
 	if err := os.WriteFile(configPath, data, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	return configPath
+}
+
+func assertHermeticSchedulerFilesystemMounts(t *testing.T, cfg config.Config) {
+	t.Helper()
+	if !cfg.Resources.Enabled || !cfg.Resources.Filesystem.Enabled {
+		t.Fatal("scheduler test config disabled resource filesystem collection")
+	}
+	if len(cfg.Resources.Filesystem.Mounts) == 0 {
+		t.Fatal("scheduler test config did not declare filesystem mounts")
+	}
+	forbidden := map[string]struct{}{
+		filepath.Clean(config.DefaultStateDir): {},
+		filepath.Clean(config.DefaultLogDir):   {},
+	}
+	for _, mount := range cfg.Resources.Filesystem.Mounts {
+		clean := filepath.Clean(mount)
+		if _, ok := forbidden[clean]; ok {
+			t.Fatalf("scheduler test inherited production-only filesystem mount %q", mount)
+		}
+		if _, err := os.Stat(clean); err != nil {
+			t.Fatalf("scheduler test filesystem mount %q is not hermetic/existing: %v", mount, err)
+		}
+	}
+}
+
+func yamlString(value string) string {
+	return strconv.Quote(value)
 }

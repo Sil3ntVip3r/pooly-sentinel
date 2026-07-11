@@ -52,11 +52,24 @@ cleanup() {
 }
 trap cleanup EXIT
 
+yaml_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "${value}"
+}
+
 CONFIG="${TMP_DIR}/config.yaml"
 FIXTURE="${TMP_DIR}/observations.json"
 STATE_DIR="${TMP_DIR}/state"
 LOG_DIR="${TMP_DIR}/log"
 mkdir -p "${STATE_DIR}" "${LOG_DIR}"
+CONFIG_STATE_DIR="$(yaml_quote "${STATE_DIR}")"
+CONFIG_LOG_DIR="$(yaml_quote "${LOG_DIR}")"
+ROOT_MOUNT="$(yaml_quote "/")"
+TMP_MOUNT="$(yaml_quote "${TMP_DIR}")"
+STATE_MOUNT="$(yaml_quote "${STATE_DIR}")"
+LOG_MOUNT="$(yaml_quote "${LOG_DIR}")"
 
 cat > "${CONFIG}" <<EOF_CONFIG
 version: "1"
@@ -91,6 +104,51 @@ agent:
 logging:
   level: "info"
   format: "text"
+
+resources:
+  enabled: true
+  interval: 30s
+  timeout: 3s
+
+  cpu:
+    enabled: true
+
+  memory:
+    enabled: true
+
+  pressure:
+    enabled: true
+    missing_is_ok: true
+
+  filesystem:
+    enabled: true
+    mounts:
+      - ${ROOT_MOUNT}
+      - ${TMP_MOUNT}
+      - ${STATE_MOUNT}
+      - ${LOG_MOUNT}
+
+  diskio:
+    enabled: true
+    auto_discover: true
+    exclude:
+      - loop*
+      - ram*
+      - fd*
+      - sr*
+
+  network:
+    enabled: true
+    auto_discover: true
+    include: []
+    exclude:
+      - lo
+      - docker*
+      - veth*
+      - br-*
+
+  uptime:
+    enabled: true
 
 rules:
   - id: dry-run-memory-low
@@ -135,8 +193,8 @@ notification:
   paid_receivers_enabled_by_default: false
 
 storage:
-  state_dir: ${STATE_DIR}
-  log_dir: ${LOG_DIR}
+  state_dir: ${CONFIG_STATE_DIR}
+  log_dir: ${CONFIG_LOG_DIR}
   database_file: state.db
   current_metrics_file: metrics-current.json
   sqlite:

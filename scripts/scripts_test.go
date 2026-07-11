@@ -141,6 +141,37 @@ func TestReleaseCheckRequiresGovulncheck(t *testing.T) {
 	}
 }
 
+func TestLocalDryRunUsesHermeticResourceMounts(t *testing.T) {
+	root := repoRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "scripts", "local-dry-run.sh"))
+	if err != nil {
+		t.Fatalf("read local-dry-run.sh: %v", err)
+	}
+	text := string(data)
+	required := []string{
+		"No systemd, root privileges, external network, production paths, or real notifications are required.",
+		"yaml_quote()",
+		"resources:",
+		"filesystem:",
+		"mounts:",
+		"- ${ROOT_MOUNT}",
+		"- ${TMP_MOUNT}",
+		"- ${STATE_MOUNT}",
+		"- ${LOG_MOUNT}",
+		"scheduler run-once --config",
+	}
+	for _, want := range required {
+		if !strings.Contains(text, want) {
+			t.Fatalf("local-dry-run.sh missing hermetic dry-run marker %q", want)
+		}
+	}
+	for _, forbidden := range []string{"/var/lib/pooly-sentinel", "/var/log/pooly-sentinel"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("local-dry-run.sh contains production path %q", forbidden)
+		}
+	}
+}
+
 func TestReleaseScriptsExistAndAreExecutable(t *testing.T) {
 	root := repoRoot(t)
 	for _, name := range []string{"install.sh", "uninstall.sh", "check-release.sh", "local-dry-run.sh", "scan-secrets.sh"} {
